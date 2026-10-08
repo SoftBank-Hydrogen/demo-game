@@ -128,7 +128,7 @@ public class TugView : MonoBehaviour
     [Serializable] class BrowserState
     {
         public bool connected, canTap, reducedMotion;
-        public string team, phase, target, release, server;
+        public string team, phase, target, release, server, looks;
         public int round, tapsA, tapsB, playersA, playersB, myTaps, pingMs, savedRounds = -1, winsA, winsB, shownA, shownB;
         public bool mineMarked;
     }
@@ -139,6 +139,7 @@ public class TugView : MonoBehaviour
         var board = client.Scoreboard;
         TugReport(JsonUtility.ToJson(new BrowserState {
             shownA = crowd != null ? crowd.Shown("A") : 0, shownB = crowd != null ? crowd.Shown("B") : 0, mineMarked = crowd != null && crowd.MineMarked(),
+            looks = crowd != null ? crowd.Looks() : "",
             savedRounds = board != null ? board.rounds : -1, winsA = board != null ? board.wins.A : 0, winsB = board != null ? board.wins.B : 0,
             connected = client.Connected, canTap = client.CanTap, reducedMotion = reducedMotion,
             team = client.Team, phase = client.Phase, target = client.Target, release = client.Release, server = client.ServerUrl,

@@ -12,7 +12,7 @@ public static class TugCrowdAuthoring
     public static void Ensure()
     {
         var existing = Object.FindFirstObjectByType<TugCrowdView>(FindObjectsInactive.Include);
-        if (existing != null) { UseSingleImage(existing); return; }
+        if (existing != null) { UseSingleImage(existing); AddAccessories(existing); return; }
         var view = Object.FindFirstObjectByType<TugView>();
         var layout = view.GetComponent<PulseLayout>();
         var client = view.GetComponent<TugClient>();
@@ -74,6 +74,7 @@ public static class TugCrowdAuthoring
         layout.Apply(false);
         EditorSceneManager.MarkSceneDirty(view.gameObject.scene);
         EditorSceneManager.SaveScene(view.gameObject.scene);
+        AddAccessories(crowdView);
         Debug.Log("TUG_ARENA_ADDED");
     }
 
@@ -96,13 +97,36 @@ public static class TugCrowdAuthoring
         Debug.Log("TUG_SINGLE_IMAGE");
     }
 
-    // Full-size image behind the marker; TugCrowdView sets the team sprite per player.
-    static void AddMochiImage(Transform template)
+    // Upgrade: an accessory image above the body and the list of accessory sprites
+    // (TugCrowdView picks one per player).
+    static void AddAccessories(TugCrowdView view)
     {
-        var img = Img("Mochi", template, TugArtwork.Load("MochiA"), Color.white);
+        var template = view.transform.Find("MochiTemplate");
+        if (template == null || template.Find("Accessory") != null) return;
+        TugArtwork.Generate();   // creates only missing images
+        var sprites = TugArtwork.LoadAccessories();
+        var img = FullImage("Accessory", template, sprites[0]);
+        img.transform.SetSiblingIndex(template.Find("Mochi").GetSiblingIndex() + 1);
+
+        var so = new SerializedObject(view);
+        var list = so.FindProperty("accessories");
+        list.arraySize = sprites.Length;
+        for (int i = 0; i < sprites.Length; i++) list.GetArrayElementAtIndex(i).objectReferenceValue = sprites[i];
+        so.ApplyModifiedPropertiesWithoutUndo();
+        EditorSceneManager.MarkSceneDirty(view.gameObject.scene);
+        EditorSceneManager.SaveScene(view.gameObject.scene);
+        Debug.Log("TUG_ACCESSORIES_ADDED");
+    }
+
+    // Full-size image behind the marker; TugCrowdView sets the team sprite per player.
+    static void AddMochiImage(Transform template) => FullImage("Mochi", template, TugArtwork.Load("MochiA")).transform.SetAsFirstSibling();
+
+    static Image FullImage(string name, Transform parent, Sprite sprite)
+    {
+        var img = Img(name, parent, sprite, Color.white);
         img.rectTransform.anchorMin = Vector2.zero; img.rectTransform.anchorMax = Vector2.one;
         img.rectTransform.offsetMin = img.rectTransform.offsetMax = Vector2.zero;
-        img.transform.SetAsFirstSibling();
+        return img;
     }
     static RectTransform Node(string name, Transform parent)
     {

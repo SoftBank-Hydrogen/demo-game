@@ -32,6 +32,12 @@ const until = (p, fn, arg, timeout = 60000) => p.waitForFunction(fn, arg, { time
       await until(page, () => { const s = window.__tugState; return s && s.shownA === 1 && s.shownB === 1 && s.mineMarked; }, null, 10000);
     checks.push('Both screens show one character per team and mark their own character with YOU');
 
+    // Accessories come from the player id, so both screens must agree on who wears what.
+    const [dl, pl] = [(await state(desktop)).looks, (await state(phone)).looks];
+    assert.ok(dl && !dl.includes(':-1'), `every character has an accessory (${dl})`);
+    assert.equal(dl, pl, 'both screens show the same accessory per player');
+    checks.push(`Both screens show the same accessory per player (${dl})`);
+
     // Start from a fresh round so earlier taps are not mixed in.
     await until(desktop, () => window.__tugState?.phase === 'countdown', null, 45000);
     await until(desktop, () => window.__tugState?.phase === 'playing', null, 15000);

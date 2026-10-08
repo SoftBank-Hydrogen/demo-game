@@ -6,6 +6,8 @@ using UnityEngine.UI;
 // holding a rope at hand height. My character stands nearest the rope centre and gets a "YOU" marker.
 // More than 5 players per team use two rows (back row smaller and darker). The rope's knot moves
 // toward the team that is ahead, and a team leans back when it taps.
+// Each player wears one accessory and is slightly taller or shorter; both come from the player id,
+// so the same player looks the same on every screen.
 public class TugCrowdView : MonoBehaviour
 {
     [Header("Scene references")]
@@ -20,6 +22,9 @@ public class TugCrowdView : MonoBehaviour
     // Complete character images (Assets/Art/Tug/MochiA.png, MochiB.png). Edit the PNGs directly;
     // both face right, team B is mirrored here.
     [SerializeField] Sprite teamASprite, teamBSprite;
+    // Drawn over the body, same canvas as the Mochi images (Assets/Art/Tug/Accessories/*.png).
+    [SerializeField] Sprite[] accessories;
+    [SerializeField, Range(0, .15f)] float sizeVariation = .05f;     // ±5% height
     [SerializeField, Min(1)] int maxPerTeam = 10, maxPerRow = 5;
     [SerializeField, Range(.3f, 1.2f)] float characterHeightShare = .62f;   // of arena height
     [SerializeField] float centreGap = 34, maxShiftShare = .06f;
@@ -36,10 +41,11 @@ public class TugCrowdView : MonoBehaviour
     class Character
     {
         public RectTransform root, marker;
-        public Image image;
-        public string team;
+        public Image image, accessory;
+        public string id, team;
         public int row, column, rowCount;       // rowCount: characters in this row
-        public float phase;
+        public int look;                        // accessory index, -1 for none
+        public float phase, height;             // height: this player's size multiplier
     }
 
     public void SetReducedMotion(bool value) => reducedMotion = value;
@@ -101,10 +107,12 @@ public class TugCrowdView : MonoBehaviour
     Character Create()
     {
         var root = (RectTransform)Instantiate(template, crowd);
+        var accessory = root.Find("Accessory");
         return new Character
         {
             root = root,
             image = root.Find("Mochi").GetComponent<Image>(),
+            accessory = accessory != null ? accessory.GetComponent<Image>() : null,
             marker = (RectTransform)root.Find("Marker"),
         };
     }
@@ -112,6 +120,7 @@ public class TugCrowdView : MonoBehaviour
     Character Assign(Character c, RosterEntry p, string team, int index, int count)
     {
         int perRow = count <= maxPerRow ? count : Mathf.CeilToInt(count / 2f);
+        c.id = p.id;
         c.team = team;
         c.row = index < perRow ? 0 : 1;
         c.column = c.row == 0 ? index : index - perRow;
@@ -123,7 +132,25 @@ public class TugCrowdView : MonoBehaviour
         c.image.sprite = team == "A" ? teamASprite : teamBSprite;
         c.image.color = new Color(shade, shade, shade, 1);
         c.marker.gameObject.SetActive(p.id == client.PlayerId);
+
+        uint hash = Hash(p.id);
+        bool hasAccessory = c.accessory != null && accessories != null && accessories.Length > 0;
+        c.look = hasAccessory ? (int)(hash % (uint)accessories.Length) : -1;
+        c.height = 1 + sizeVariation * (((hash >> 16) & 0xFF) / 127.5f - 1);
+        if (c.accessory != null)
+        {
+            c.accessory.gameObject.SetActive(hasAccessory);
+            if (hasAccessory) { c.accessory.sprite = accessories[c.look]; c.accessory.color = c.image.color; }
+        }
         return c;
+    }
+
+    // FNV-1a: the same id gives the same number on every device (string.GetHashCode is not guaranteed to).
+    static uint Hash(string s)
+    {
+        uint h = 2166136261;
+        foreach (char ch in s) { h ^= ch; h *= 16777619; }
+        return h;
     }
 
     void Place()
@@ -145,16 +172,18 @@ public class TugCrowdView : MonoBehaviour
             count++;
             bool isA = c.team == "A";
             float scale = c.row == 0 ? 1 : backRowScale;
-            float s = size * scale;
+            float s = size * scale;                 // row size: spacing, marker and rope use this
+            float own = s * c.height;               // this player's drawn size
             float spacing = c.rowCount <= 1 ? 0 : Mathf.Min(s * .78f, room / (c.rowCount - 1));
             float offset = centreGap + size * .5f + c.column * spacing + (c.row == 1 ? spacing * .5f : 0);
             float x = isA ? centre - offset : centre + offset;
-            float y = ground + (c.row == 1 ? size * backRowLift : 0);
+            // Taller or shorter players shift a little so their hands stay at rope height.
+            float y = ground + (c.row == 1 ? size * backRowLift : 0) + (s - own) * HandHeight;
             float lean = (isA ? leanA : leanB) * leanDegrees;
             float bob = reducedMotion ? 0 : Mathf.Sin(t * 3f + c.phase) * bobPixels;
             float back = reducedMotion ? 0 : lean * .6f;          // step back a little while pulling
 
-            c.root.sizeDelta = new Vector2(s, s);
+            c.root.sizeDelta = new Vector2(own, own);
             c.root.anchoredPosition = new Vector2(x + (isA ? -back : back), y + bob);
             c.root.localScale = new Vector3(isA ? 1 : -1, 1, 1);
             float tilt = reducedMotion ? 0 : lean;              // mirrored for B by the scale
@@ -186,4 +215,12 @@ public class TugCrowdView : MonoBehaviour
     // Test hook: how many characters are shown per team and whether mine is marked.
     public int Shown(string team) { int n = 0; foreach (var c in pool) if (c.root.gameObject.activeSelf && c.team == team) n++; return n; }
     public bool MineMarked() { foreach (var c in pool) if (c.root.gameObject.activeSelf && c.marker.gameObject.activeSelf) return true; return false; }
+    // "id:accessory" for every shown character, sorted, so two screens can be compared.
+    public string Looks()
+    {
+        var looks = new List<string>();
+        foreach (var c in pool) if (c.root.gameObject.activeSelf) looks.Add(c.id + ":" + c.look);
+        looks.Sort(System.StringComparer.Ordinal);
+        return string.Join(",", looks);
+    }
 }
