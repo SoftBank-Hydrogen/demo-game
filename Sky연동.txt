@@ -1,0 +1,33 @@
+TUG 연동 메모
+
+게임은 두 팀이 30초 동안 연타하는 방식입니다.
+화면은 Unity Web, 서버는 Node.js + ws, 경기 기록은 SQLite를 사용합니다.
+
+파일 위치
+- game/client: 웹 빌드. 정적 파일로 제공하면 됩니다.
+- game/server: 서버 소스. npm ci 후 npm start로 실행합니다.
+- 로컬 확인은 Node.js 22.13 이상에서 run-demo.cmd 실행 후 localhost:3000을 탭 두 개로 열면 됩니다.
+
+배포할 때 바꿀 부분
+- server.js: 127.0.0.1:8080 고정입니다. 수신 주소와 포트를 배포 환경에 맞춰주세요.
+- ALLOWED_ORIGINS: localhost만 허용합니다. 배포한 웹페이지 출처를 넣어주세요.
+- client/index.html: GAME_SERVER를 실제 서버의 /ws 주소로 바꿔주세요. HTTPS에서는 wss://를 사용합니다.
+- 현재 /health와 서버의 주기적 ping/pong 처리는 없습니다.
+
+DB
+- server/db.js에서 server/data/scores.db에 완료된 경기 결과를 저장합니다.
+- PostgreSQL로 바꾸면 DB 코드, 테이블 생성 SQL, 비동기 호출부와 연결 설정을 수정하면 됩니다.
+- 기존 기록을 이어가려면 데이터 이전도 필요합니다.
+- 진행 중 경기와 접속자는 메모리에 있어 서버를 재시작하면 새로 시작합니다.
+
+probe
+- WebSocket /ws에 join 없이 보내면 됩니다.
+  요청: {"type":"sky.probe","nonce":"32자리 hex"}
+  응답: {"type":"sky.probe.ack","nonce":"받은 값 그대로","serverTime":시간값}
+- Sky에서 매번 nonce를 만들고, 5초 안에 같은 값이 오는지 확인해주세요. serverTime은 추가 정보입니다.
+- 보낸 연결에만 답하며 플레이어 수, 팀, 탭 수에 포함하지 않습니다.
+
+유지할 부분
+- /ws 경로와 기존 게임 메시지 형식을 유지해주세요. roster는 참가자 캐릭터 표시용입니다.
+- /stats로 서버 상태, /api/scoreboard와 /api/rounds로 저장된 경기 기록을 조회합니다.
+- 두 브라우저의 입력 반영, 경기 종료 후 기록 추가, DB 전환 후 재배포 시 기록 유지를 확인하면 됩니다.

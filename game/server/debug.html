@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tug debug</title>
+<style>
+  body { margin: 0; font: 16px system-ui, sans-serif; background: #071214; color: #eaf4f2; display: grid; place-items: center; min-height: 100vh; }
+  main { width: min(92vw, 520px); text-align: center; }
+  .bar { display: flex; height: 28px; border-radius: 14px; overflow: hidden; background: #163033; margin: 16px 0; }
+  .a { background: #5CF2C4; transition: width .1s; } .b { background: #FFB547; flex: 1; }
+  button { width: 100%; height: 140px; font-size: 40px; font-weight: 700; border: 0; border-radius: 20px; background: #2FB894; color: #071214; touch-action: manipulation; }
+  button.B { background: #FFB547; }
+  small { color: #8FA6A8; }
+</style>
+</head>
+<body>
+<main>
+  <p id="status">connecting…</p>
+  <h1 id="phase">—</h1>
+  <div class="bar"><div class="a" id="barA" style="width:50%"></div><div class="b"></div></div>
+  <p><b id="tapsA">0</b> A · B <b id="tapsB">0</b></p>
+  <p><small id="players"></small></p>
+  <button id="tap">TAP</button>
+  <p><small id="result"></small></p>
+</main>
+<script>
+// Development page for checking the server before the Unity client exists.
+const socket = new WebSocket('ws://localhost:8080/ws');
+let pending = 0;
+const $ = id => document.getElementById(id);
+socket.onopen = () => { $('status').textContent = 'connected'; socket.send(JSON.stringify({ type: 'join' })); };
+socket.onclose = () => $('status').textContent = 'disconnected';
+socket.onmessage = event => {
+  const m = JSON.parse(event.data);
+  if (m.type === 'welcome') { $('status').textContent = 'you are team ' + m.team; $('tap').className = m.team; }
+  if (m.type === 'state') {
+    const total = m.taps.A + m.taps.B;
+    $('barA').style.width = (total ? m.taps.A / total * 100 : 50) + '%';
+    $('tapsA').textContent = m.taps.A; $('tapsB').textContent = m.taps.B;
+    $('phase').textContent = m.phase + (m.remainingMs ? ' ' + Math.ceil(m.remainingMs / 1000) + 's' : '');
+    $('players').textContent = 'players A ' + m.players.A + ' / B ' + m.players.B;
+  }
+  if (m.type === 'result') $('result').textContent = 'round ' + m.round + ': ' + m.winner + ' (' + m.taps.A + ' : ' + m.taps.B + ')';
+};
+const tap = () => { pending++; };
+$('tap').addEventListener('pointerdown', tap);
+document.addEventListener('keydown', e => { if (e.code === 'Space' && !e.repeat) tap(); });
+// Send taps in batches, 20 times per second at most.
+setInterval(() => {
+  if (pending && socket.readyState === WebSocket.OPEN) { socket.send(JSON.stringify({ type: 'tap', n: pending })); pending = 0; }
+}, 50);
+</script>
+</body>
+</html>
