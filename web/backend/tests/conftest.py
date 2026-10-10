@@ -17,6 +17,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
     monkeypatch.setenv("SEED_DATABASE", "")   # start empty, without the sample data
     monkeypatch.setenv("MAX_UPLOAD_MB", "1")
+    monkeypatch.setenv("IMAGE_UPLOADS", "1")
     from main import app
     with TestClient(app) as c:
         yield c
