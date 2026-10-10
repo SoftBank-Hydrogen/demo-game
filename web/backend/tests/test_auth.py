@@ -35,6 +35,24 @@ def test_wrong_password_and_missing_token(client):
     assert client.get("/api/posts", headers={"Authorization": "Bearer made-up"}).status_code == 401
 
 
+def test_new_database_starts_from_seed(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    import seed
+    seed.build(tmp_path / "seed.db")
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "board.db"))
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("SEED_DATABASE", str(tmp_path / "seed.db"))
+    from main import app
+    with TestClient(app) as client:
+        res = client.post("/api/auth/login", json={"username": "Mina", "password": "demo"})
+        assert res.status_code == 200 and res.json()["created"] is False
+        headers = {"Authorization": "Bearer " + res.json()["token"]}
+        assert client.get("/api/posts", headers=headers).json()["total"] == 2
+        assert client.get("/api/projects", headers=headers).json()[0]["taskCounts"] == {"todo": 1, "doing": 1, "done": 1}
+        # New rows continue after the sample ids.
+        assert client.post("/api/posts", headers=headers, json={"title": "t", "body": "b"}).json()["id"] == 3
+
+
 def test_password_is_not_stored_in_plain_text(client):
     import sqlite3
     import os

@@ -32,20 +32,21 @@ def task_json(row: sqlite3.Row) -> dict:
 
 @router.get("/api/projects")
 def list_projects(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
-    rows = db.execute("""
-        SELECT p.*, u.username, u.display_name,
-               SUM(t.status = 'todo') AS todo, SUM(t.status = 'doing') AS doing, SUM(t.status = 'done') AS done
-          FROM projects p JOIN users u ON u.id = p.owner_id LEFT JOIN tasks t ON t.project_id = p.id
-         GROUP BY p.id ORDER BY p.updated_at DESC""").fetchall()
-    return [{**project_json(r), "taskCounts": {s: r[s] or 0 for s in ("todo", "doing", "done")}} for r in rows]
+    count = "(SELECT COUNT(*) FROM tasks t WHERE t.project_id = p.id AND t.status = '{0}') AS {0}"
+    rows = db.execute(f"""
+        SELECT p.*, u.username, u.display_name, {count.format('todo')}, {count.format('doing')}, {count.format('done')}
+          FROM projects p JOIN users u ON u.id = p.owner_id
+         ORDER BY p.updated_at DESC""").fetchall()
+    return [{**project_json(r), "taskCounts": {s: r[s] for s in ("todo", "doing", "done")}} for r in rows]
 
 
 @router.post("/api/projects", status_code=201)
 def create_project(body: ProjectIn, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
     with db:
-        cur = db.execute("INSERT INTO projects (owner_id, name, description, created_at, updated_at) "
-                         "VALUES (?, ?, ?, ?, ?)", (user["id"], body.name, body.description, now(), now()))
-    return _full(db, cur.lastrowid)
+        project_id = db.execute("INSERT INTO projects (owner_id, name, description, created_at, updated_at) "
+                                "VALUES (?, ?, ?, ?, ?) RETURNING id",
+                                (user["id"], body.name, body.description, now(), now())).fetchone()[0]
+    return _full(db, project_id)
 
 
 @router.get("/api/projects/{project_id}")
@@ -68,7 +69,8 @@ def update_project(project_id: int, body: ProjectPatch, user=Depends(current_use
 def delete_project(project_id: int, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
     _own(db, project_id, user)
     with db:
-        db.execute("DELETE FROM projects WHERE id = ?", (project_id,))   # tasks go with it
+        db.execute("DELETE FROM tasks WHERE project_id = ?", (project_id,))
+        db.execute("DELETE FROM projects WHERE id = ?", (project_id,))
 
 
 @router.post("/api/projects/{project_id}/tasks", status_code=201)
@@ -76,13 +78,13 @@ def create_task(project_id: int, body: TaskIn, user=Depends(current_user), db: s
     _project(db, project_id)
     _check_assignee(db, body.assignee_id)
     with db:
-        cur = db.execute(
+        task_id = db.execute(
             "INSERT INTO tasks (project_id, title, description, status, assignee_id, due_date, created_by, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
             (project_id, body.title, body.description, body.status, body.assignee_id,
-             body.due_date.isoformat() if body.due_date else None, user["id"], now(), now()))
+             body.due_date.isoformat() if body.due_date else None, user["id"], now(), now())).fetchone()[0]
         _touch(db, project_id)
-    return _task(db, cur.lastrowid)
+    return _task(db, task_id)
 
 
 @router.patch("/api/tasks/{task_id}")

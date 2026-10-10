@@ -1,11 +1,11 @@
-// Talks to the TeamBoard API. The API address comes from /config.json at startup,
-// so the same build works locally and when deployed (only config.json differs).
+// Talks to the SkyBoard API. The API address comes from config.json at startup,
+// next to index.html, so one build works on any host (only config.json differs).
 
-const TOKEN_KEY = 'teamboard.token';
+const TOKEN_KEY = 'skyboard.token';
 let baseUrl = '';
 
 export async function loadConfig() {
-  const res = await fetch('/config.json', { cache: 'no-store' });
+  const res = await fetch('config.json', { cache: 'no-store' });
   if (!res.ok) throw new Error('config.json could not be loaded');
   const config = await res.json();
   baseUrl = String(config.apiBaseUrl || '').replace(/\/+$/, '');
@@ -41,7 +41,7 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   }
   if (res.status === 401 && token) {
     setToken(null);
-    window.dispatchEvent(new Event('teamboard:logout'));   // AuthProvider shows the login page
+    window.dispatchEvent(new Event('skyboard:logout'));   // AuthProvider shows the login page
   }
   if (res.status === 204) return null;
   const data = await res.json().catch(() => null);

@@ -1,10 +1,18 @@
-# TeamBoard — 팀 게시판 / 프로젝트 관리 (Sky 시연용 웹앱)
+# SkyBoard — 팀 게시판 / 프로젝트 관리 (Sky 메인 데모 Case B)
 
-이미지를 붙일 수 있는 팀 게시판과 프로젝트·할 일 관리 웹앱이다. 화면(React)과 API(FastAPI)를 **따로 배포**한다.
+이미지를 붙일 수 있는 팀 게시판과 프로젝트·할 일 관리 웹앱이다.
+**React + FastAPI + SQLite + 로컬 업로드**로 만들어, Sky가 아래처럼 판단하고 옮기는 장면을 보여 주는 용도다.
+
+| 부분 | 지금 (로컬) | Sky 판단 | AWS | 온프레미스 |
+| --- | --- | --- | --- | --- |
+| 화면 `web/static` | 빌드된 정적 파일 | Static | S3 + CloudFront | Nginx |
+| API `web/backend` | FastAPI | Container | ECS | Docker |
+| DB | SQLite 파일 | 영속 관계형 DB | RDS (PostgreSQL) | PostgreSQL |
+| 이미지 | `data/uploads/` 폴더 | Object storage | S3 | Volume |
 
 | 기능 | 내용 |
 | --- | --- |
-| 회원 | 이름과 비밀번호만 넣으면 들어간다. 처음 쓰는 이름이면 그 자리에서 계정이 생긴다(규칙: 이름 1~30자, 비밀번호 1자 이상). 비밀번호는 scrypt 해시로 저장 |
+| 들어가기 | 이름과 비밀번호만 넣는다. 처음 쓰는 이름이면 그 자리에서 계정이 생긴다(이름 1~30자, 비밀번호 1자 이상). 샘플 계정: `mina` / `demo`, `jun` / `demo` |
 | 게시글 | 목록(페이지), 보기, 쓰기, 고치기, 지우기. 고치기·지우기는 작성자만 |
 | 이미지 | 글 하나에 최대 4장, 한 장 5MB. PNG·JPEG·GIF·WebP만(파일 내용으로 판별, SVG 거부) |
 | 프로젝트·할 일 | 프로젝트 만들기(이름 변경·삭제는 만든 사람만), 할 일 추가·담당자·마감일·상태(할 일 → 진행 중 → 완료)·삭제 |
@@ -14,22 +22,21 @@
 
 ```
 web/
-  backend/                 FastAPI (Python 3.13)
+  static/                  ← 화면 배포본 (npm run build 결과, git에 포함). 이 폴더를 그대로 올린다
+    config.json            API 주소. 배포할 때 이것만 고친다
+  backend/                 ← API 배포본 (FastAPI, Python 3.13)
     main.py                앱 시작점: app = FastAPI(...), /, /health
-    board/config.py        환경 변수 읽기
-    board/db.py            SQLite 연결, migrations/*.sql 적용
-    board/security.py      비밀번호 해시, 로그인 토큰
+    requirements.txt       fastapi, uvicorn, python-multipart
+    board/schema.sql       테이블 (시작할 때 IF NOT EXISTS로 생성)
+    board/db.py            SQLite 연결, 새 DB면 seed 복사
     board/storage.py       이미지 파일 저장 (로컬 폴더; S3로 바꿀 때 이 파일만 수정)
+    board/security.py      비밀번호 해시, 로그인 토큰
     board/schemas.py       입력 검사 규칙
     board/routes/          auth, posts, images, projects, search
-    migrations/001_init.sql
-    tests/                 pytest 13개
-  frontend/                React + Vite
-    src/api.js             API 호출 (주소는 /config.json에서 읽음)
-    src/auth.jsx           로그인 상태
-    src/pages/             화면들
-    public/config.json     개발용 API 주소
-    server.js              배포용 정적 서버 (npm start)
+    seed/board.db          샘플 데이터 (SQLite 파일 1개)
+    seed.py                seed/board.db를 다시 만드는 스크립트
+    tests/                 pytest 14개
+  frontend/                화면 소스 (React + Vite). 고친 뒤 npm run build → static/ 갱신
 Tools/board-browser-check.cjs   브라우저 자동 확인
 ```
 
@@ -46,57 +53,50 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
    ```
    - `uv`가 없으면 `python -m venv .venv` → `.venv\Scripts\pip install -r requirements-dev.txt`
    - `http://localhost:8000/docs`에서 API를 직접 눌러 볼 수 있다(FastAPI 자동 문서)
-2. **화면**
-   ```
-   cd web/frontend
-   npm ci
-   npm run dev
-   ```
-3. 브라우저에서 `http://localhost:5173` → 아무 이름과 비밀번호를 넣고 Enter. 다른 브라우저(또는 시크릿 창)에서 다른 이름으로 들어가면 둘이 함께 쓰는 모습을 볼 수 있다.
+2. **화면** (둘 중 하나)
+   - 고치면서 보기: `cd web/frontend` → `npm ci` → `npm run dev` → `http://localhost:5173`
+   - 배포본 그대로 보기: `cd web/frontend` → `npm run preview` → `http://localhost:4173` (`web/static`을 제공)
+3. 아무 이름과 비밀번호로 들어간다. 시크릿 창에서 다른 이름으로 들어가면 둘이 함께 쓰는 모습을 볼 수 있다.
 
-데이터는 `web/backend/data/`(`board.db`, `uploads/`)에 쌓인다. 지우면 처음 상태가 된다(git에는 올라가지 않음).
+데이터는 `web/backend/data/`(`board.db`, `uploads/`)에 쌓인다(git 제외). 이 폴더를 지우고 API를 다시 켜면 샘플 데이터로 다시 시작한다.
 
 ## 테스트
 
-- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (13개: 이름으로 들어가기·로그인, 권한, 이미지 검사, 페이지·검색, 프로젝트·할 일)
-- 브라우저: 위처럼 API와 화면을 띄운 뒤 저장소 루트에서
+- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (14개)
+- 브라우저: API와 화면을 띄운 뒤 저장소 루트에서
   ```
   npm ci --prefix Tools
   node Tools/board-browser-check.cjs http://localhost:5173
   ```
   데스크톱 1명 + 휴대폰 화면 1명이 실제 클릭·입력으로 들어가기 → 이미지 글 → 프로젝트·할 일 → 검색 → 수정 → 로그아웃·재로그인까지 확인한다. Google Chrome이 필요하다.
 
-## 설정 (환경 변수)
+## 설정 (환경 변수, API)
 
-| 앱 | 변수 | 기본값 | 뜻 |
-| --- | --- | --- | --- |
-| API | `DATABASE_PATH` | `data/board.db` | SQLite 파일 위치 |
-| API | `UPLOAD_DIR` | `data/uploads` | 이미지 파일 폴더 |
-| API | `CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | API를 부를 수 있는 화면 주소(쉼표로 여러 개) |
-| API | `MAX_UPLOAD_MB` | `5` | 이미지 한 장 최대 크기 |
-| API | `SESSION_DAYS` | `7` | 로그인 유지 기간 |
-| 화면 | `API_BASE_URL` | (없으면 `public/config.json`) | 브라우저가 부를 API 주소 |
-| 화면 | `PORT`, `HOST` | `3000`, `0.0.0.0` | 배포용 서버 주소 |
+| 변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `DATABASE_PATH` | `data/board.db` | SQLite 파일 위치 |
+| `SEED_DATABASE` | `seed/board.db` | DB가 없을 때 복사할 샘플. 빈 값이면 빈 DB로 시작 |
+| `UPLOAD_DIR` | `data/uploads` | 이미지 파일 폴더 |
+| `CORS_ORIGINS` | `*` | API를 부를 수 있는 화면 주소(쉼표로 여러 개). 로그인은 쿠키가 아니라 `Authorization` 헤더라 `*`도 안전하다 |
+| `MAX_UPLOAD_MB` | `5` | 이미지 한 장 최대 크기 |
+| `SESSION_DAYS` | `7` | 로그인 유지 기간 |
 
-화면은 빌드 결과에 API 주소를 넣지 않고 시작할 때 `/config.json`을 읽는다. 그래서 **같은 빌드를 어디에 배포해도 `API_BASE_URL`만 바꾸면 된다.**
+화면은 빌드에 API 주소를 넣지 않고, 시작할 때 `index.html` 옆의 `config.json`을 읽는다. 주소는 `#/posts/3`처럼 `#` 뒤에 있어서, 정적 호스팅(S3, Nginx)에 별도 설정 없이 올려도 새로고침과 직접 접속이 된다.
 
 ## 배포 (Sky)
 
-두 폴더를 **각각 하나의 앱**으로 올린다. Sky의 정적 분석 결과는 아래와 같다(직접 확인함).
+1. **API**: `web/backend`를 올린다 → 공개 주소를 얻는다(예: `https://xxxx.ecs.aws`).
+2. **화면**: `web/static/config.json`의 `apiBaseUrl`을 그 주소로 바꾼 뒤 `web/static`을 올린다.
 
-| 폴더 | Sky가 보는 앱 | 실행 | 확인 경로 |
-| --- | --- | --- | --- |
-| `web/backend` | `python-asgi` | `python -m uvicorn main:app --host 0.0.0.0 --port $PORT` | `/` 또는 `/health` |
-| `web/frontend` | `nodejs` | `npm start` (먼저 `vite build`가 자동 실행됨) | `/` 또는 `/health` |
+Sky 최신 코드(`sky-platform` origin/main)의 분석 함수로 직접 확인한 결과:
 
-순서:
-1. API를 먼저 배포해 주소를 얻는다(예: `https://api.example.com`).
-2. 화면을 배포할 때 `API_BASE_URL=https://api.example.com`을 준다.
-3. API에 `CORS_ORIGINS=https://화면주소`를 준다. 빠뜨리면 브라우저가 "Cannot reach the server" 또는 CORS 오류를 낸다.
+| 검사 | 결과 |
+| --- | --- |
+| `web/static` 정적 사이트 판정 (`assess_static_site`) | `eligible` → S3 + CloudFront |
+| `web/backend` 실행 방식 (`analyze`) | `python-asgi`, `python -m uvicorn main:app --host 0.0.0.0 --port $PORT` |
+| SQLite → PostgreSQL 자동 이전 사전 검사 (`preflight_sqlite_conversion`) | 통과. `seed/board.db` 7개 테이블, 행 8개 → `postgresql` |
 
-**데이터 보존:** SQLite 파일과 이미지는 컨테이너 안의 디스크에 저장된다. 재배포하면 사라지므로 Sky가 이 두 가지를 짚어 줄 것이다(`DATA-SQLITE-01`, `STORAGE-DURABILITY-01`). 계속 보관하려면
-- 볼륨을 붙이고 `DATABASE_PATH`, `UPLOAD_DIR`를 그 볼륨 안으로 지정하거나
-- DB는 PostgreSQL(RDS 등)로, 이미지는 S3로 옮긴다. 이미지는 `board/storage.py`만 바꾸면 되고, DB는 `board/db.py`와 SQL 문장(`?` 자리표시자 등)을 바꿔야 한다.
+SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER 기본 키, NOT NULL만** 쓴다(외래 키·UNIQUE·인덱스·기본값·CHECK 없음, `migrations/` 폴더 없음, SQLite 파일 1개). 그 규칙들은 코드에서 지킨다. 자세한 이유는 `board/schema.sql` 맨 위 주석.
 
 ## API 한눈에
 
@@ -120,6 +120,6 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
 
 ## 알아둘 점
 
-- 글에 붙이지 않고 버린 업로드 이미지(올렸다가 글을 저장하지 않은 경우)는 서버에 남는다. 정리 작업은 아직 없다.
-- 로그인 시도 횟수 제한은 없다. 공개 서비스로 쓰려면 추가해야 한다.
+- 글에 붙이지 않고 버린 업로드 이미지(올렸다가 글을 저장하지 않은 경우)는 서버에 남는다.
+- 로그인 시도 횟수 제한은 없다(테스트용).
 - 로그인 토큰은 브라우저 `localStorage`에 둔다(화면과 API 주소가 달라도 동작하도록).

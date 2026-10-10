@@ -1,8 +1,8 @@
-"""TeamBoard API (FastAPI).
+"""SkyBoard API (FastAPI).
 
 Local:   uvicorn main:app --reload --host 127.0.0.1 --port 8000
 Deploy:  python -m uvicorn main:app --host 0.0.0.0 --port $PORT
-Settings: see board/config.py (DATABASE_PATH, UPLOAD_DIR, CORS_ORIGINS, MAX_UPLOAD_MB, SESSION_DAYS).
+Settings: see board/config.py (DATABASE_PATH, SEED_DATABASE, UPLOAD_DIR, CORS_ORIGINS, MAX_UPLOAD_MB, SESSION_DAYS).
 """
 import sqlite3
 from contextlib import asynccontextmanager
@@ -11,21 +11,20 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from board.config import load_settings
-from board.db import get_db, migrate
+from board.db import get_db, init_db
 from board.routes import auth, images, posts, projects, search
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.settings = load_settings()
-    app.state.settings.upload_dir.mkdir(parents=True, exist_ok=True)
-    applied = migrate(app.state.settings.database_path)
-    if applied:
-        print("Applied migrations:", ", ".join(applied))
+    settings = app.state.settings = load_settings()
+    settings.upload_dir.mkdir(parents=True, exist_ok=True)
+    if init_db(settings.database_path, settings.seed_database):
+        print("New database started from the sample data in", settings.seed_database)
     yield
 
 
-app = FastAPI(title="TeamBoard API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="SkyBoard API", version="0.2.0", lifespan=lifespan)
 
 # The web page is served from a different address (the frontend), so the browser asks first (CORS).
 app.add_middleware(
@@ -42,7 +41,7 @@ for module in (auth, images, posts, projects, search):
 
 @app.get("/")
 def root():
-    return {"service": "teamboard-api", "status": "ok", "docs": "/docs"}
+    return {"service": "skyboard-api", "status": "ok", "docs": "/docs"}
 
 
 @app.get("/health")

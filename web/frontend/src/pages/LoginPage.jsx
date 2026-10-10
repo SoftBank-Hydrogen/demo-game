@@ -24,7 +24,7 @@ export default function LoginPage() {
   return (
     <div className="auth">
       <form className="card auth-card" onSubmit={submit}>
-        <h1>TeamBoard</h1>
+        <h1>SkyBoard</h1>
         <p className="muted">Team posts, projects and tasks in one place.</p>
         <label>Name<input value={username} onChange={e => setUsername(e.target.value)} autoComplete="username" required maxLength={30} /></label>
         <label>Password<input value={password} onChange={e => setPassword(e.target.value)} type="password" autoComplete="current-password" required /></label>

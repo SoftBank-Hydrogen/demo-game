@@ -1,4 +1,5 @@
-"""SQLite access: one connection per request, migrations applied once at startup."""
+"""SQLite access: one connection per request; tables created at startup from schema.sql."""
+import shutil
 import sqlite3
 from collections.abc import Iterator
 from datetime import datetime, timezone
@@ -6,7 +7,7 @@ from pathlib import Path
 
 from fastapi import Request
 
-MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
+SCHEMA = Path(__file__).resolve().parent / "schema.sql"
 
 
 def connect(path: Path) -> sqlite3.Connection:
@@ -18,24 +19,20 @@ def connect(path: Path) -> sqlite3.Connection:
     return conn
 
 
-def migrate(path: Path) -> list[str]:
-    """Apply migrations/*.sql that have not run yet, in name order. Returns the names applied."""
+def init_db(path: Path, seed: Path | None = None) -> bool:
+    """Create the database if needed. A missing database starts as a copy of `seed` (sample data)
+    when one is given. Returns True if the seed was copied."""
+    seeded = False
+    if seed and seed.is_file() and not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(seed, path)
+        seeded = True
     conn = connect(path)
     try:
-        conn.execute("PRAGMA journal_mode = WAL")   # readers do not block the writer
-        conn.execute("CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TEXT NOT NULL)")
-        done = {row["name"] for row in conn.execute("SELECT name FROM schema_migrations")}
-        applied = []
-        for file in sorted(MIGRATIONS.glob("*.sql")):
-            if file.name in done:
-                continue
-            with conn:   # one transaction per file
-                conn.executescript("BEGIN;" + file.read_text(encoding="utf-8"))
-                conn.execute("INSERT INTO schema_migrations VALUES (?, ?)", (file.name, now()))
-            applied.append(file.name)
-        return applied
+        conn.executescript(SCHEMA.read_text(encoding="utf-8"))
     finally:
         conn.close()
+    return seeded
 
 
 def get_db(request: Request) -> Iterator[sqlite3.Connection]:
@@ -52,5 +49,5 @@ def now() -> str:
 
 
 def like(text: str) -> str:
-    """Pattern for `LIKE ? ESCAPE '\\'` that matches `text` literally anywhere."""
-    return "%" + text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    """Pattern for `lower(column) LIKE ? ESCAPE '\\'`: matches `text` literally, ignoring case."""
+    return "%" + text.lower().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"

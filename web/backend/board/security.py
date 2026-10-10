@@ -34,7 +34,8 @@ def new_session(db: sqlite3.Connection, user_id: int, days: int) -> str:
     expires = (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     with db:
         db.execute("DELETE FROM sessions WHERE expires_at < ?", (now(),))
-        db.execute("INSERT INTO sessions VALUES (?, ?, ?, ?)", (_token_hash(token), user_id, now(), expires))
+        db.execute("INSERT INTO sessions (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                   (_token_hash(token), user_id, now(), expires))
     return token
 
 

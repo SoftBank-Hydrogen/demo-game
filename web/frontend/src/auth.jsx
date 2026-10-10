@@ -15,8 +15,8 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const onLogout = () => setUser(null);
-    window.addEventListener('teamboard:logout', onLogout);
-    return () => window.removeEventListener('teamboard:logout', onLogout);
+    window.addEventListener('skyboard:logout', onLogout);
+    return () => window.removeEventListener('skyboard:logout', onLogout);
   }, []);
 
   const signIn = useCallback(async (path, body) => {

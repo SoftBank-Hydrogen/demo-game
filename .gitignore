@@ -10,7 +10,6 @@ Artifacts/
 game/server/data/
 web/backend/data/
 web/backend/.venv/
-web/frontend/dist/
 __pycache__/
 .pytest_cache/
 **/node_modules/

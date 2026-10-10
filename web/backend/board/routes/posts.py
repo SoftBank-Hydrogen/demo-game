@@ -17,7 +17,7 @@ SELECT p.*, u.username, u.display_name,
        (SELECT i.filename FROM post_images pi JOIN images i ON i.id = pi.image_id
          WHERE pi.post_id = p.id ORDER BY pi.position LIMIT 1) AS thumbnail
   FROM posts p JOIN users u ON u.id = p.author_id
- WHERE ? = '' OR p.title LIKE ? ESCAPE '\\' OR p.body LIKE ? ESCAPE '\\'
+ WHERE ? = '' OR lower(p.title) LIKE ? ESCAPE '\\' OR lower(p.body) LIKE ? ESCAPE '\\'
 """
 
 
@@ -35,7 +35,7 @@ def list_posts(q: str = Query("", max_length=100), page: int = Query(1, ge=1),
                user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
     q = q.strip()
     args = (q, like(q), like(q))
-    total = db.execute(f"SELECT COUNT(*) FROM ({LIST_SQL})", args).fetchone()[0]
+    total = db.execute(f"SELECT COUNT(*) FROM ({LIST_SQL}) AS matches", args).fetchone()[0]
     rows = db.execute(LIST_SQL + " ORDER BY p.id DESC LIMIT ? OFFSET ?", args + (page_size, (page - 1) * page_size))
     items = [{**post_json(r), "excerpt": r["body"][:140], "imageCount": r["image_count"],
               "thumbnail": storage.url(r["thumbnail"]) if r["thumbnail"] else None} for r in rows]
@@ -50,10 +50,11 @@ def get_post(post_id: int, user=Depends(current_user), db: sqlite3.Connection = 
 @router.post("", status_code=201)
 def create_post(body: PostIn, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
     with db:
-        cur = db.execute("INSERT INTO posts (author_id, title, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                         (user["id"], body.title, body.body, now(), now()))
-        _set_images(db, cur.lastrowid, user["id"], body.image_ids)
-    return _full(db, cur.lastrowid)
+        post_id = db.execute("INSERT INTO posts (author_id, title, body, created_at, updated_at) "
+                             "VALUES (?, ?, ?, ?, ?) RETURNING id",
+                             (user["id"], body.title, body.body, now(), now())).fetchone()[0]
+        _set_images(db, post_id, user["id"], body.image_ids)
+    return _full(db, post_id)
 
 
 @router.patch("/{post_id}")
@@ -112,7 +113,7 @@ def _set_images(db: sqlite3.Connection, post_id: int, user_id: int, image_ids: l
     removed = [image for image in current if image["id"] not in ids]
     db.execute("DELETE FROM post_images WHERE post_id = ?", (post_id,))
     for position, image_id in enumerate(ids):
-        db.execute("INSERT INTO post_images VALUES (?, ?, ?)", (post_id, image_id, position))
+        db.execute("INSERT INTO post_images (post_id, image_id, position) VALUES (?, ?, ?)", (post_id, image_id, position))
     for image in removed:
         db.execute("DELETE FROM images WHERE id = ?", (image["id"],))
     return [image["filename"] for image in removed]

@@ -1,13 +1,12 @@
 {
-  "name": "teamboard-web",
+  "name": "skyboard-web",
   "private": true,
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "prestart": "vite build",
-    "start": "node server.js"
+    "preview": "vite preview"
   },
   "engines": {
     "node": ">=20.19"

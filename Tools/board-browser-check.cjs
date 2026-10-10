@@ -1,4 +1,4 @@
-// Browser check for TeamBoard (web/). Start the API and the web server first, then:
+// Browser check for SkyBoard (web/). Start the API and the web server first, then:
 //   node Tools/board-browser-check.cjs [webUrl]      (default http://localhost:5173)
 // Two people (desktop + phone) enter, share a post with an image, plan tasks and search.
 // Uses real clicks and typing. Needs Google Chrome and `npm ci --prefix Tools` (Playwright).
@@ -114,7 +114,9 @@ async function page(browser, options, problems) {
   const p = await (await browser.newContext(options)).newPage();
   p.on('pageerror', e => problems.push(String(e)));
   // 401 on purpose (wrong password) and the refused text file (415) are expected.
-  p.on('console', m => { if (m.type() === 'error' && !/401|415/.test(m.text())) problems.push(m.text()); });
+  p.on('console', m => {
+    if (m.type() === 'error' && !/401|415/.test(m.text())) problems.push(`${m.text()} ${m.location().url || ''}`.trim());
+  });
   await p.goto(web);
   return p;
 }

@@ -47,7 +47,7 @@ function Header() {
 
   return (
     <header className="topbar">
-      <span className="brand">TeamBoard</span>
+      <span className="brand">SkyBoard</span>
       <nav>
         <NavLink to="/posts">Board</NavLink>
         <NavLink to="/projects">Projects</NavLink>

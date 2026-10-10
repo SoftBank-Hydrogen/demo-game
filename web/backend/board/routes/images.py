@@ -28,10 +28,10 @@ async def upload(request: Request, file: UploadFile = File(...), user=Depends(cu
     content_type, ext = kind
     name = storage.save(settings.upload_dir, data, ext)
     with db:
-        cur = db.execute(
-            "INSERT INTO images (owner_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?)",
-            (user["id"], name, content_type, len(data), now()))
-    return image_json(db.execute("SELECT * FROM images WHERE id = ?", (cur.lastrowid,)).fetchone())
+        row = db.execute(
+            "INSERT INTO images (owner_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?) RETURNING *",
+            (user["id"], name, content_type, len(data), now())).fetchone()
+    return image_json(row)
 
 
 @router.get("/uploads/{name}")

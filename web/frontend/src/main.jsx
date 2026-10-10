@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router-dom';
+import { HashRouter } from 'react-router-dom';
 import { loadConfig } from './api.js';
 import { AuthProvider } from './auth.jsx';
 import App from './App.jsx';
@@ -12,11 +12,11 @@ const root = createRoot(document.getElementById('root'));
 loadConfig()
   .then(() => root.render(
     <StrictMode>
-      <BrowserRouter>
+      <HashRouter>
         <AuthProvider>
           <App />
         </AuthProvider>
-      </BrowserRouter>
+      </HashRouter>
     </StrictMode>,
   ))
-  .catch(error => root.render(<p className="fatal">TeamBoard could not start: {error.message}</p>));
+  .catch(error => root.render(<p className="fatal">SkyBoard could not start: {error.message}</p>));

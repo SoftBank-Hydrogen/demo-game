@@ -15,6 +15,7 @@ def client(tmp_path, monkeypatch):
     """A fresh app with its own database and upload folder."""
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "board.db"))
     monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("SEED_DATABASE", "")   # start empty, without the sample data
     monkeypatch.setenv("MAX_UPLOAD_MB", "1")
     from main import app
     with TestClient(app) as c:

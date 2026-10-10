@@ -17,17 +17,20 @@ def user_json(row: sqlite3.Row) -> dict:
 @router.post("/api/auth/login")
 def login(body: Login, request: Request, db: sqlite3.Connection = Depends(get_db)):
     """Existing name: the password must match. New name: the account is created with this password."""
-    find = lambda: db.execute("SELECT * FROM users WHERE username = ?", (body.username,)).fetchone()
+    # Names are unique ignoring case. The oldest row with a name owns it.
+    find = lambda: db.execute("SELECT * FROM users WHERE lower(username) = lower(?) ORDER BY id LIMIT 1",
+                              (body.username,)).fetchone()
     user, created = find(), False
     if user is None:
-        try:
-            with db:
-                db.execute("INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
-                           (body.username, body.username, hash_password(body.password), now()))
-            created = True
-        except sqlite3.IntegrityError:   # someone took the name a moment ago
-            pass
+        with db:
+            new_id = db.execute("INSERT INTO users (username, display_name, password_hash, created_at) "
+                                "VALUES (?, ?, ?, ?) RETURNING id",
+                                (body.username, body.username, hash_password(body.password), now())).fetchone()[0]
         user = find()
+        created = user["id"] == new_id
+        if not created:   # someone took the same name a moment earlier: keep theirs
+            with db:
+                db.execute("DELETE FROM users WHERE id = ?", (new_id,))
     if not created and not verify_password(body.password, user["password_hash"]):
         raise HTTPException(401, "Wrong password for this name")
     token = new_session(db, user["id"], request.app.state.settings.session_days)
@@ -47,5 +50,5 @@ def me(user=Depends(current_user)):
 @router.get("/api/users")
 def users(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
     """Everyone on the board, for choosing a task's assignee."""
-    rows = db.execute("SELECT * FROM users ORDER BY display_name COLLATE NOCASE").fetchall()
+    rows = db.execute("SELECT * FROM users ORDER BY lower(display_name)").fetchall()
     return [user_json(r) for r in rows]
