@@ -2,8 +2,17 @@ from conftest import signup
 
 
 def test_health_and_root(client):
-    assert client.get("/").json()["status"] == "ok"
+    root = client.get("/")
+    assert root.status_code == 200
+    if "text/html" in root.headers["content-type"]:
+        assert '<div id="root">' in root.text
+        assert client.get("/config.json").json() == {"apiBaseUrl": ""}
+    else:
+        assert root.json()["status"] == "ok"
     assert client.get("/health").json() == {"status": "ok"}
+    for private_path in ("/main.py", "/data/board.db", "/seed/board.db", "/board/schema.sql"):
+        assert client.get(private_path).status_code == 404
+    assert client.get("/api/not-a-route").status_code == 404
 
 
 def test_new_name_creates_account_then_login_me_logout(client):

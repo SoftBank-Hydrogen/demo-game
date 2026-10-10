@@ -1,14 +1,13 @@
 # SkyBoard — 팀 게시판 / 프로젝트 관리 (Sky 메인 데모 Case B)
 
-이미지를 붙일 수 있는 팀 게시판과 프로젝트·할 일 관리 웹앱이다.
-**React + FastAPI + SQLite + 로컬 업로드**로 만들어, Sky가 아래처럼 판단하고 옮기는 장면을 보여 주는 용도다.
+이미지를 붙일 수 있는 팀 게시판과 프로젝트·할 일 관리 웹앱이다. **React + FastAPI + SQLite + 로컬 업로드.**
+FastAPI 서버 하나가 화면과 API를 함께 제공한다(같은 주소). Sky에는 **ZIP 하나를 올려 Deploy 한 번 → URL 하나**로 배포한다.
 
-| 부분 | 지금 (로컬) | Sky 판단 | AWS | 온프레미스 |
-| --- | --- | --- | --- | --- |
-| 화면 `web/static` | 빌드된 정적 파일 | Static | S3 + CloudFront | Nginx |
-| API `web/backend` | FastAPI | Container | ECS | Docker |
-| DB | SQLite 파일 | 영속 관계형 DB | RDS (PostgreSQL) | PostgreSQL |
-| 이미지 | `data/uploads/` 폴더 | Object storage | S3 (`S3_BUCKET`) | Volume (`UPLOAD_DIR`) 또는 MinIO |
+| 부분 | 지금 (로컬) | Sky 배포 후: AWS | 온프레미스 |
+| --- | --- | --- | --- |
+| 앱 (화면 + API) | FastAPI 서버 하나 | ECS 컨테이너 | Docker 컨테이너 |
+| DB | `data/board.db` (SQLite) | RDS PostgreSQL (Sky가 자동 이전·코드 변환) | SQLite 그대로 + 볼륨 `/app/data` |
+| 이미지 | `data/uploads/` | S3 (`S3_BUCKET`) | 같은 볼륨 `/app/data/uploads` |
 
 | 기능 | 내용 |
 | --- | --- |
@@ -22,11 +21,10 @@
 
 ```
 web/
-  static/                  ← 화면 배포본 (npm run build 결과, git에 포함). 이 폴더를 그대로 올린다
-    config.json            API 주소. 배포할 때 이것만 고친다
-  backend/                 ← API 배포본 (FastAPI, Python 3.13)
-    main.py                앱 시작점: app = FastAPI(...), /, /health
-    requirements.txt       fastapi, uvicorn, python-multipart
+  backend/                 FastAPI (Python 3.13). 화면도 여기서 제공
+    main.py                app = FastAPI(...); /api/*, /uploads/*, /health, 그 외 경로는 화면
+    Dockerfile             배포용 이미지 (PORT 환경 변수로 실행)
+    requirements.txt       fastapi, uvicorn, python-multipart, boto3
     board/schema.sql       테이블 (시작할 때 IF NOT EXISTS로 생성)
     board/db.py            SQLite 연결, 새 DB면 seed 복사
     board/storage.py       이미지 저장: 로컬 폴더(기본) 또는 S3 버킷(S3_BUCKET)
@@ -36,77 +34,85 @@ web/
     seed/board.db          샘플 데이터 (SQLite 파일 1개)
     seed.py                seed/board.db를 다시 만드는 스크립트
     tests/                 pytest 16개 (S3는 moto 가짜 S3로 검사)
-  frontend/                화면 소스 (React + Vite). 고친 뒤 npm run build → static/ 갱신
+  frontend/                화면 소스 (React + Vite). npm run build → ../static
+  static/                  빌드된 화면 (git에 포함). 로컬에서는 API가 이 폴더를 제공
+Tools/package-skyboard.py       Sky 업로드용 ZIP 만들기
 Tools/board-browser-check.cjs   브라우저 자동 확인
 ```
 
 ## 로컬 실행
 
-터미널 두 개가 필요하다.
+처음 한 번 가상환경을 만든다.
+```
+cd web/backend
+uv venv --python 3.13 .venv
+uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
+```
+(`uv`가 없으면 `python -m venv .venv` → `.venv\Scripts\pip install -r requirements-dev.txt`)
 
-1. **API** (처음 한 번 가상환경을 만든다)
-   ```
-   cd web/backend
-   uv venv --python 3.13 .venv
-   uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
-   .venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
-   ```
-   - `uv`가 없으면 `python -m venv .venv` → `.venv\Scripts\pip install -r requirements-dev.txt`
-   - `http://localhost:8000/docs`에서 API를 직접 눌러 볼 수 있다(FastAPI 자동 문서)
-2. **화면** (둘 중 하나)
-   - 고치면서 보기: `cd web/frontend` → `npm ci` → `npm run dev` → `http://localhost:5173`
-   - 배포본 그대로 보기: `cd web/frontend` → `npm run preview` → `http://localhost:4173` (`web/static`을 제공)
-3. 아무 이름과 비밀번호로 들어간다. 시크릿 창에서 다른 이름으로 들어가면 둘이 함께 쓰는 모습을 볼 수 있다.
+- **써 보기 (터미널 하나):** `.venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000` → `http://localhost:8000`
+  - 빌드된 `web/static` 화면이 같이 나온다. API 문서는 `http://localhost:8000/docs`
+- **화면을 고치면서 보기:** 위 API를 켠 채로 `cd web/frontend` → `npm ci` → `npm run dev` → `http://localhost:5173`
+  - 개발 서버가 `/api`, `/uploads`를 8000번 API로 넘겨 준다. 다 고쳤으면 `npm run build`로 `web/static`을 갱신한다
 
-데이터는 `web/backend/data/`(`board.db`, `uploads/`)에 쌓인다(git 제외). 이 폴더를 지우고 API를 다시 켜면 샘플 데이터로 다시 시작한다.
+아무 이름과 비밀번호로 들어간다. 시크릿 창에서 다른 이름으로 들어가면 둘이 함께 쓰는 모습을 볼 수 있다.
+데이터는 `web/backend/data/`(`board.db`, `uploads/`)에 쌓인다(git 제외). 이 폴더를 지우고 다시 켜면 샘플 데이터로 시작한다.
 
 ## 테스트
 
 - API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (16개)
-- 브라우저: API와 화면을 띄운 뒤 저장소 루트에서
+- 브라우저: 서버를 띄운 뒤 저장소 루트에서
   ```
   npm ci --prefix Tools
-  node Tools/board-browser-check.cjs http://localhost:5173
+  node Tools/board-browser-check.cjs http://localhost:8000
   ```
   데스크톱 1명 + 휴대폰 화면 1명이 실제 클릭·입력으로 들어가기 → 이미지 글 → 프로젝트·할 일 → 검색 → 수정 → 로그아웃·재로그인까지 확인한다. Google Chrome이 필요하다.
 
-## 설정 (환경 변수, API)
+## Sky 배포
 
-| 변수 | 기본값 | 뜻 |
-| --- | --- | --- |
-| `DATABASE_PATH` | `data/board.db` | SQLite 파일 위치 |
-| `SEED_DATABASE` | `seed/board.db` | DB가 없을 때 복사할 샘플. 빈 값이면 빈 DB로 시작 |
-| `UPLOAD_DIR` | `data/uploads` | 이미지 파일 폴더 (`S3_BUCKET`이 없을 때) |
-| `S3_BUCKET` | (없음) | 주면 이미지를 이 S3 버킷에 저장. 접속 정보는 AWS 표준 방식(ECS 작업 역할, `AWS_*` 변수)으로 받는다 |
-| `S3_PREFIX` | `uploads/` | 버킷 안 경로 앞부분 |
-| `S3_ENDPOINT_URL` | (없음) | MinIO 같은 S3 호환 저장소 주소 |
-| `CORS_ORIGINS` | `*` | API를 부를 수 있는 화면 주소(쉼표로 여러 개). 로그인은 쿠키가 아니라 `Authorization` 헤더라 `*`도 안전하다 |
-| `MAX_UPLOAD_MB` | `5` | 이미지 한 장 최대 크기 |
-| `SESSION_DAYS` | `7` | 로그인 유지 기간 |
+1. 업로드용 ZIP을 만든다(저장소 루트에서):
+   ```
+   web/backend/.venv/Scripts/python.exe Tools/package-skyboard.py dist/skyboard.zip
+   ```
+   화면을 빌드한 뒤 `main.py`, `board/`, `Dockerfile`, `requirements.txt`, `public/`(화면), `data/board.db`(샘플 DB)를 묶는다.
+   **GitHub의 `web/backend` 폴더만 올리면 화면과 DB가 빠지므로 이 ZIP을 올린다.**
+2. Sky에 ZIP을 올리고 Deploy → 나온 URL로 접속한다.
 
-화면은 빌드에 API 주소를 넣지 않고, 시작할 때 `index.html` 옆의 `config.json`을 읽는다. 주소는 `#/posts/3`처럼 `#` 뒤에 있어서, 정적 호스팅(S3, Nginx)에 별도 설정 없이 올려도 새로고침과 직접 접속이 된다.
-
-## 배포 (Sky)
-
-1. **이미지 저장소** (재배포해도 이미지가 남게)
-   - AWS: S3 버킷을 만들고(비공개 그대로) API 컨테이너에 `S3_BUCKET=<버킷 이름>`을 준다. ECS 작업 역할에 그 버킷의 `s3:ListBucket`(시작 시 확인용)과 `uploads/*`에 대한 `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` 권한이 필요하다.
-   - 온프레미스: 볼륨을 붙이고 `UPLOAD_DIR`을 그 안으로 지정한다(MinIO를 쓰면 `S3_BUCKET` + `S3_ENDPOINT_URL`).
-   - 저장소를 쓸 수 없으면 API가 시작할 때 바로 멈추고 이유를 로그에 남긴다(첫 업로드에서야 실패하지 않도록).
-2. **API**: `web/backend`를 올린다 → 공개 주소를 얻는다(예: `https://xxxx.ecs.aws`).
-3. **화면**: `web/static/config.json`의 `apiBaseUrl`을 그 주소로 바꾼 뒤 `web/static`을 올린다.
-
-이미지 주소는 어느 저장소든 `/uploads/<이름>`으로 같다. API가 저장소에서 읽어 보내 주므로 버킷을 공개할 필요가 없다.
-
-Sky 최신 코드(`sky-platform` origin/main)의 분석 함수로 직접 확인한 결과:
+ZIP을 Sky 최신 코드(`sky-platform` origin/main) 분석 함수와 Docker로 확인한 결과:
 
 | 검사 | 결과 |
 | --- | --- |
-| `web/static` 정적 사이트 판정 (`assess_static_site`) | `eligible` → S3 + CloudFront |
-| `web/backend` 실행 방식 (`analyze`) | `python-asgi`, `python -m uvicorn main:app --host 0.0.0.0 --port $PORT` |
-| SQLite → PostgreSQL 자동 이전 사전 검사 (`preflight_sqlite_conversion`) | 통과. `seed/board.db` 7개 테이블, 행 8개 → `postgresql` |
-| 이미지 저장소 | Sky에는 아직 앱 파일용 S3 연결 기능이 없다(`durable_files: False`). 앱은 `S3_BUCKET`만 주면 S3를 쓰므로, Sky는 버킷·권한을 만들고 이 변수를 넣어 주면 된다 |
+| 실행 방식 (`analyze`) | 기존 Dockerfile 사용. Sky가 넘기는 `PORT`(3000)로 뜬다 |
+| SQLite → PostgreSQL 자동 이전 사전 검사 | 통과. `data/board.db` 7개 테이블, 행 8개 → `postgresql` (RDS) |
+| 로컬/온프레미스 SQLite 볼륨 조건 | DB 1개, 하위 폴더 `data/`, Dockerfile `WORKDIR /app` → 볼륨 `/app/data`. 이미지(`data/uploads`)도 같은 볼륨에 남는다 |
+| Docker 실제 실행 (빈 볼륨을 `/app/data`에, `PORT=3000`) | 화면·API·`/health` 정상, 내부 파일(`/main.py`, `/data/board.db`) 404, 브라우저 확인 7단계 통과, 컨테이너를 새로 만들어도 글·이미지 유지 |
 
 SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER 기본 키, NOT NULL만** 쓴다(외래 키·UNIQUE·인덱스·기본값·CHECK 없음, `migrations/` 폴더 없음, SQLite 파일 1개). 그 규칙들은 코드에서 지킨다. 자세한 이유는 `board/schema.sql` 맨 위 주석.
+
+### 이미지 저장소
+- 온프레미스: 위 볼륨에 저장되므로 따로 할 일이 없다(MinIO를 쓰려면 `S3_BUCKET` + `S3_ENDPOINT_URL`).
+- AWS(ECS): 컨테이너 디스크는 재배포 때 지워진다. S3 버킷을 만들고(비공개 그대로) `S3_BUCKET=<버킷 이름>`을 준다. 작업 역할에 그 버킷의 `s3:ListBucket`과 `uploads/*`의 `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`가 필요하다. Sky에는 아직 앱 파일용 S3 연결 기능이 없다(`durable_files: False`).
+- 이미지 주소는 어느 저장소든 `/uploads/<이름>`으로 같다(API가 읽어서 보낸다).
+- 저장소를 쓸 수 없으면 서버가 시작할 때 바로 멈추고 이유를 로그에 남긴다.
+
+### 화면만 따로 배포하고 싶을 때 (선택)
+`web/static`은 그대로 정적 사이트(S3 + CloudFront, Nginx)로 올릴 수 있다(Sky 정적 판정 `eligible`).
+이때는 `web/static/config.json`의 `apiBaseUrl`에 API 주소를 넣는다. API의 `CORS_ORIGINS` 기본값이 `*`라 추가 설정은 없다.
+
+## 설정 (환경 변수)
+
+| 변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `PORT` | `8000` (Dockerfile) | 서버 포트 |
+| `DATABASE_PATH` | `data/board.db` | SQLite 파일 위치 |
+| `SEED_DATABASE` | `seed/board.db` | DB가 없을 때 복사할 샘플. 빈 값이면 빈 DB로 시작 |
+| `UPLOAD_DIR` | `data/uploads` | 이미지 폴더 (`S3_BUCKET`이 없을 때) |
+| `S3_BUCKET` | (없음) | 주면 이미지를 이 S3 버킷에 저장. 접속 정보는 AWS 표준 방식(작업 역할, `AWS_*` 변수) |
+| `S3_PREFIX` | `uploads/` | 버킷 안 경로 앞부분 |
+| `S3_ENDPOINT_URL` | (없음) | MinIO 같은 S3 호환 저장소 주소 |
+| `CORS_ORIGINS` | `*` | 화면을 따로 배포할 때 API를 부를 수 있는 주소. 로그인은 `Authorization` 헤더라 `*`도 안전하다 |
+| `MAX_UPLOAD_MB` | `5` | 이미지 한 장 최대 크기 |
+| `SESSION_DAYS` | `7` | 로그인 유지 기간 |
 
 ## API 한눈에
 
@@ -127,9 +133,11 @@ SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER �
 | POST | `/api/projects/{id}/tasks` | 할 일 추가 `{title, assigneeId?, dueDate?, status?}` |
 | PATCH / DELETE | `/api/tasks/{id}` | 할 일 수정(보낸 칸만 바뀜)·삭제 |
 | GET | `/api/search?q=` | `{posts, projects, tasks}` |
+| GET | `/health` | 서버·DB 확인 |
 
 ## 알아둘 점
 
 - 글에 붙이지 않고 버린 업로드 이미지(올렸다가 글을 저장하지 않은 경우)는 서버에 남는다.
 - 로그인 시도 횟수 제한은 없다(테스트용).
-- 로그인 토큰은 브라우저 `localStorage`에 둔다(화면과 API 주소가 달라도 동작하도록).
+- Dockerfile은 root로 실행한다(Sky 볼륨 권한 문제를 피하려고).
+- Sky가 나중에 업로드 폴더까지 "영속 파일"로 감지하게 바뀌면, 지금의 로컬 SQLite 볼륨 기능은 "SQLite 외 요구"로 보고 거부한다. 그때는 Sky 쪽에서 같은 볼륨 안의 파일을 허용해야 한다.

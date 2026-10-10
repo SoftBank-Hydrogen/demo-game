@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-// `npm run build` writes the static site to ../static (committed): upload that folder to any static host
-// (S3 + CloudFront, Nginx). Edit static/config.json there to point at the deployed API.
+const proxy = {
+  '/api': 'http://127.0.0.1:8000',
+  '/uploads': 'http://127.0.0.1:8000',
+};
+
+// FastAPI serves ../static in the single-server build.
 export default defineConfig({
   plugins: [react()],
   base: './',
   build: { outDir: '../static', emptyOutDir: true },
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
-  preview: { host: '127.0.0.1', port: 4173, strictPort: true },
+  server: { host: '127.0.0.1', port: 5173, strictPort: true, proxy },
+  preview: { host: '127.0.0.1', port: 4173, strictPort: true, proxy },
 });

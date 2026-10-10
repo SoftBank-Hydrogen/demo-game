@@ -37,7 +37,7 @@ export async function api(path, { method = 'GET', body, form } = {}) {
   try {
     res = await fetch(baseUrl + path, { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
   } catch {
-    throw new ApiError(0, `Cannot reach the server (${baseUrl || 'no API address'})`);
+    throw new ApiError(0, `Cannot reach the server (${baseUrl || window.location.origin})`);
   }
   if (res.status === 401 && token) {
     setToken(null);

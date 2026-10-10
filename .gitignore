@@ -31,3 +31,4 @@ Unity/.vs/
 Thumbs.db
 *.csproj
 *.sln
+dist/

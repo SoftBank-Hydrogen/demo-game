@@ -6,9 +6,11 @@ Settings: see board/config.py (DATABASE_PATH, SEED_DATABASE, UPLOAD_DIR or S3_BU
 """
 import sqlite3
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from board.config import load_settings
 from board.db import get_db, init_db
@@ -33,7 +35,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SkyBoard API", version="0.2.0", lifespan=lifespan)
 
-# The web page is served from a different address (the frontend), so the browser asks first (CORS).
+# Also allow a separately hosted frontend when configured.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=list(load_settings().cors_origins),
@@ -46,12 +48,21 @@ for module in (auth, images, posts, projects, search):
     app.include_router(module.router)
 
 
-@app.get("/")
-def root():
-    return {"service": "skyboard-api", "status": "ok", "docs": "/docs"}
-
-
 @app.get("/health")
 def health(db: sqlite3.Connection = Depends(get_db)):
     db.execute("SELECT 1").fetchone()
     return {"status": "ok"}
+
+
+backend_dir = Path(__file__).resolve().parent
+static_dir = backend_dir / "public"
+if not (static_dir / "index.html").is_file():
+    static_dir = backend_dir.parent / "static"
+
+if (static_dir / "index.html").is_file():
+    # API and upload routes take precedence over the frontend.
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
+else:
+    @app.get("/")
+    def root():
+        return {"service": "skyboard-api", "status": "ok", "docs": "/docs"}
