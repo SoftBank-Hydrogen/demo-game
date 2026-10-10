@@ -4,7 +4,7 @@
 
 | 기능 | 내용 |
 | --- | --- |
-| 회원 | 가입, 로그인, 로그아웃. 비밀번호는 scrypt 해시, 로그인 토큰은 해시만 DB에 저장 |
+| 회원 | 이름과 비밀번호만 넣으면 들어간다. 처음 쓰는 이름이면 그 자리에서 계정이 생긴다(규칙: 이름 1~30자, 비밀번호 1자 이상). 비밀번호는 scrypt 해시로 저장 |
 | 게시글 | 목록(페이지), 보기, 쓰기, 고치기, 지우기. 고치기·지우기는 작성자만 |
 | 이미지 | 글 하나에 최대 4장, 한 장 5MB. PNG·JPEG·GIF·WebP만(파일 내용으로 판별, SVG 거부) |
 | 프로젝트·할 일 | 프로젝트 만들기(이름 변경·삭제는 만든 사람만), 할 일 추가·담당자·마감일·상태(할 일 → 진행 중 → 완료)·삭제 |
@@ -52,19 +52,19 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
    npm ci
    npm run dev
    ```
-3. 브라우저에서 `http://localhost:5173` → "Create an account"로 가입한다. 다른 브라우저(또는 시크릿 창)에서 한 명 더 가입하면 둘이 함께 쓰는 모습을 볼 수 있다.
+3. 브라우저에서 `http://localhost:5173` → 아무 이름과 비밀번호를 넣고 Enter. 다른 브라우저(또는 시크릿 창)에서 다른 이름으로 들어가면 둘이 함께 쓰는 모습을 볼 수 있다.
 
 데이터는 `web/backend/data/`(`board.db`, `uploads/`)에 쌓인다. 지우면 처음 상태가 된다(git에는 올라가지 않음).
 
 ## 테스트
 
-- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (13개: 가입·로그인, 권한, 이미지 검사, 페이지·검색, 프로젝트·할 일)
+- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (13개: 이름으로 들어가기·로그인, 권한, 이미지 검사, 페이지·검색, 프로젝트·할 일)
 - 브라우저: 위처럼 API와 화면을 띄운 뒤 저장소 루트에서
   ```
   npm ci --prefix Tools
   node Tools/board-browser-check.cjs http://localhost:5173
   ```
-  데스크톱 1명 + 휴대폰 화면 1명이 실제 클릭·입력으로 가입 → 이미지 글 → 프로젝트·할 일 → 검색 → 수정 → 로그아웃·재로그인까지 확인한다. Google Chrome이 필요하다.
+  데스크톱 1명 + 휴대폰 화면 1명이 실제 클릭·입력으로 들어가기 → 이미지 글 → 프로젝트·할 일 → 검색 → 수정 → 로그아웃·재로그인까지 확인한다. Google Chrome이 필요하다.
 
 ## 설정 (환경 변수)
 
@@ -100,12 +100,11 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
 
 ## API 한눈에
 
-모든 `/api/*`는 가입·로그인을 빼고 `Authorization: Bearer <토큰>`이 필요하다. 오류는 `{"detail": "..."}`.
+모든 `/api/*`는 로그인을 빼고 `Authorization: Bearer <토큰>`이 필요하다. 오류는 `{"detail": "..."}`.
 
 | 메서드 | 주소 | 내용 |
 | --- | --- | --- |
-| POST | `/api/auth/register` | `{username, password, displayName}` → `{token, user}` |
-| POST | `/api/auth/login` | `{username, password}` → `{token, user}` |
+| POST | `/api/auth/login` | `{username, password}` → `{token, user, created}` (새 이름이면 계정 생성, `created: true`) |
 | POST | `/api/auth/logout` | 이 토큰 로그아웃 |
 | GET | `/api/auth/me` | 내 정보 |
 | GET | `/api/users` | 전체 멤버 (담당자 고르기용) |

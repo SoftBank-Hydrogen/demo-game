@@ -1,6 +1,6 @@
 // Browser check for TeamBoard (web/). Start the API and the web server first, then:
 //   node Tools/board-browser-check.cjs [webUrl]      (default http://localhost:5173)
-// Two people (desktop + phone) sign up, share a post with an image, plan tasks and search.
+// Two people (desktop + phone) enter, share a post with an image, plan tasks and search.
 // Uses real clicks and typing. Needs Google Chrome and `npm ci --prefix Tools` (Playwright).
 const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
@@ -10,9 +10,9 @@ const path = require('node:path');
 const web = (process.argv[2] || 'http://localhost:5173').replace(/\/$/, '');
 const shots = process.env.SHOTS_DIR || path.resolve(__dirname, '../Artifacts');
 const stamp = Date.now().toString(36);
-const alice = { username: `alice_${stamp}`, name: 'Alice', password: 'correct-horse-1' };
+const alice = { name: `Alice ${stamp}`, password: '1' };
+const bob = { name: `Bob ${stamp}`, password: '2' };
 const title = `Demo day plan ${stamp}`, poster = `QR poster ${stamp}`;
-const bob = { username: `bob_${stamp}`, name: 'Bob', password: 'correct-horse-2' };
 
 (async () => {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -22,9 +22,9 @@ const bob = { username: `bob_${stamp}`, name: 'Bob', password: 'correct-horse-2'
     const desktop = await page(browser, { viewport: { width: 1280, height: 860 } }, problems);
     const phone = await page(browser, { viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }, problems);
 
-    await signUp(desktop, alice);
-    await signUp(phone, bob);
-    checks.push('Two people create accounts and land on the board');
+    await enter(desktop, alice);
+    await enter(phone, bob);
+    checks.push('Two people enter with a new name (account created on the spot) and land on the board');
 
     // Alice writes a post with two images.
     await desktop.getByRole('link', { name: 'New post' }).click();
@@ -89,15 +89,16 @@ const bob = { username: `bob_${stamp}`, name: 'Bob', password: 'correct-horse-2'
 
     // Log out and back in.
     await desktop.getByRole('button', { name: 'Log out' }).click();
-    await desktop.getByRole('button', { name: 'Log in' }).waitFor();
-    await desktop.getByLabel('Username').fill(alice.username);
-    await desktop.getByLabel('Password').fill('wrong-password');
-    await desktop.getByRole('button', { name: 'Log in' }).click();
-    await desktop.getByText('Wrong username or password').waitFor();
+    await desktop.getByRole('button', { name: 'Enter' }).waitFor();
+    await desktop.getByLabel('Name').fill(alice.name);
+    await desktop.getByLabel('Password').fill('wrong');
+    await desktop.getByRole('button', { name: 'Enter' }).click();
+    await desktop.getByText('Wrong password for this name').waitFor();
     await desktop.getByLabel('Password').fill(alice.password);
-    await desktop.getByRole('button', { name: 'Log in' }).click();
-    await desktop.getByRole('heading', { name: 'Board' }).waitFor();
-    checks.push('Log out, a wrong password is refused, the right one logs back in');
+    await desktop.getByRole('button', { name: 'Enter' }).click();
+    await desktop.getByRole('heading', { name: 'Board', exact: true }).waitFor();
+    await desktop.getByRole('link', { name: title }).waitFor();   // same account: her post is still hers
+    checks.push('Log out; the same name with a wrong password is refused, the right one gets back in');
 
     assert.deepEqual(problems, [], 'no page errors');
     console.log(JSON.stringify({ success: true, web, checks }, null, 2));
@@ -118,13 +119,11 @@ async function page(browser, options, problems) {
   return p;
 }
 
-async function signUp(p, user) {
-  await p.getByRole('button', { name: 'Create an account' }).click();
-  await p.getByLabel('Username').fill(user.username);
-  await p.getByLabel('Display name').fill(user.name);
+async function enter(p, user) {
+  await p.getByLabel('Name').fill(user.name);
   await p.getByLabel('Password').fill(user.password);
-  await p.getByRole('button', { name: 'Create account' }).click();
-  await p.getByRole('heading', { name: 'Board' }).waitFor();
+  await p.getByRole('button', { name: 'Enter' }).click();
+  await p.getByRole('heading', { name: 'Board', exact: true }).waitFor();
 }
 
 // Number of images that actually loaded (not broken).

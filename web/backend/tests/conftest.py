@@ -21,10 +21,9 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def signup(client, username="alice", display_name=None):
-    res = client.post("/api/auth/register", json={
-        "username": username, "password": "correct-horse", "displayName": display_name or username.title()})
-    assert res.status_code == 201, res.text
+def signup(client, username="alice"):
+    res = client.post("/api/auth/login", json={"username": username, "password": "pw"})
+    assert res.status_code == 200 and res.json()["created"], res.text
     return {"Authorization": "Bearer " + res.json()["token"]}, res.json()["user"]
 
 

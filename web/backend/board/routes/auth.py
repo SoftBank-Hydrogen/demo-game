@@ -1,10 +1,10 @@
-"""Sign up, log in, log out, who am I, and the member list."""
+"""Log in (a new name signs up automatically), log out, who am I, and the member list."""
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..db import get_db, now
-from ..schemas import Login, Register
+from ..schemas import Login
 from ..security import bearer_token, current_user, end_session, hash_password, new_session, verify_password
 
 router = APIRouter(tags=["auth"])
@@ -14,28 +14,24 @@ def user_json(row: sqlite3.Row) -> dict:
     return {"id": row["id"], "username": row["username"], "displayName": row["display_name"]}
 
 
-@router.post("/api/auth/register", status_code=201)
-def register(body: Register, request: Request, db: sqlite3.Connection = Depends(get_db)):
-    try:
-        with db:
-            cur = db.execute(
-                "INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
-                (body.username, body.display_name, hash_password(body.password), now()))
-    except sqlite3.IntegrityError:
-        raise HTTPException(409, "Username is already taken") from None
-    user = db.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
-    token = new_session(db, user["id"], request.app.state.settings.session_days)
-    return {"token": token, "user": user_json(user)}
-
-
 @router.post("/api/auth/login")
 def login(body: Login, request: Request, db: sqlite3.Connection = Depends(get_db)):
-    user = db.execute("SELECT * FROM users WHERE username = ?", (body.username,)).fetchone()
-    # Same message whether the name or the password is wrong.
-    if not user or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(401, "Wrong username or password")
+    """Existing name: the password must match. New name: the account is created with this password."""
+    find = lambda: db.execute("SELECT * FROM users WHERE username = ?", (body.username,)).fetchone()
+    user, created = find(), False
+    if user is None:
+        try:
+            with db:
+                db.execute("INSERT INTO users (username, display_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                           (body.username, body.username, hash_password(body.password), now()))
+            created = True
+        except sqlite3.IntegrityError:   # someone took the name a moment ago
+            pass
+        user = find()
+    if not created and not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Wrong password for this name")
     token = new_session(db, user["id"], request.app.state.settings.session_days)
-    return {"token": token, "user": user_json(user)}
+    return {"token": token, "user": user_json(user), "created": created}
 
 
 @router.post("/api/auth/logout", status_code=204)

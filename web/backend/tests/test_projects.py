@@ -43,8 +43,8 @@ def test_task_validation(client):
 
 
 def test_search_and_users(client):
-    alice, _ = signup(client, "alice", "Alice")
-    signup(client, "bob", "Bob")
+    alice, _ = signup(client, "Alice")
+    signup(client, "Bob")
     client.post("/api/posts", headers=alice, json={"title": "Release notes", "body": "Ship the board"})
     project = client.post("/api/projects", headers=alice, json={"name": "Board release"}).json()
     client.post(f"/api/projects/{project['id']}/tasks", headers=alice, json={"title": "Write release email"})

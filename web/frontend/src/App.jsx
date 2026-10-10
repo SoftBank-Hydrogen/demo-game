@@ -56,7 +56,7 @@ function Header() {
         <input type="search" value={q} onChange={e => setQ(e.target.value)} placeholder="Search posts, projects, tasks" aria-label="Search" />
       </form>
       <span className="who">{user.displayName}</span>
-      <button className="ghost" onClick={signOut}>Log out</button>
+      <button className="ghost" onClick={() => signOut().then(() => navigate('/posts'))}>Log out</button>
     </header>
   );
 }

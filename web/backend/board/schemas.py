@@ -17,15 +17,10 @@ class In(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True, extra="forbid")
 
 
-class Register(In):
-    username: str = Field(pattern=r"^[A-Za-z0-9_]{3,30}$")
-    password: str = Field(min_length=8, max_length=128)
-    display_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
-
-
 class Login(In):
-    username: str = Field(max_length=30)
-    password: str = Field(max_length=128)
+    # Test app: any name works; a new name creates the account on first login.
+    username: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=30)]
+    password: str = Field(min_length=1, max_length=128)
 
 
 class PostIn(In):
