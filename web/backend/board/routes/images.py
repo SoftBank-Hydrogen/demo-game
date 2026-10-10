@@ -20,6 +20,8 @@ def image_json(row: sqlite3.Row) -> dict:
 async def upload(request: Request, file: UploadFile = File(...), user=Depends(current_user),
                  db: sqlite3.Connection = Depends(get_db)):
     settings = request.app.state.settings
+    if not settings.image_uploads:
+        raise HTTPException(403, "Image uploads are turned off on this server")
     data = await file.read(settings.max_upload_bytes + 1)
     if len(data) > settings.max_upload_bytes:
         raise HTTPException(413, f"Images can be at most {settings.max_upload_bytes // (1024 * 1024)} MB")

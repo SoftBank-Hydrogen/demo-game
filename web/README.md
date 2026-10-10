@@ -7,13 +7,13 @@ FastAPI 서버 하나가 화면과 API를 함께 제공한다(같은 주소). Sk
 | --- | --- | --- | --- |
 | 앱 (화면 + API) | FastAPI 서버 하나 | ECS 컨테이너 | Docker 컨테이너 |
 | DB | `data/board.db` (SQLite) | RDS PostgreSQL (Sky가 자동 이전·코드 변환) | SQLite 그대로 + 볼륨 `/app/data` |
-| 이미지 | `data/uploads/` | S3 (`S3_BUCKET`) | 같은 볼륨 `/app/data/uploads` |
+| 이미지 | 기본 꺼짐. `IMAGE_UPLOADS=1`이면 `data/uploads/` | 기본 꺼짐. 켜려면 S3 (`S3_BUCKET`) | `IMAGE_UPLOADS=1`이면 같은 볼륨 `/app/data/uploads` |
 
 | 기능 | 내용 |
 | --- | --- |
 | 들어가기 | 이름과 비밀번호만 넣는다. 처음 쓰는 이름이면 그 자리에서 계정이 생긴다(이름 1~30자, 비밀번호 1자 이상). 샘플 계정: `mina` / `demo`, `jun` / `demo` |
 | 게시글 | 목록(페이지), 보기, 쓰기, 고치기, 지우기. 고치기·지우기는 작성자만 |
-| 이미지 | 글 하나에 최대 4장, 한 장 5MB. PNG·JPEG·GIF·WebP만(파일 내용으로 판별, SVG 거부) |
+| 이미지 | **기본 꺼짐**(아래 "이미지 저장소"). 켜면 글 하나에 최대 4장, 한 장 5MB. PNG·JPEG·GIF·WebP만(파일 내용으로 판별, SVG 거부) |
 | 프로젝트·할 일 | 프로젝트 만들기(이름 변경·삭제는 만든 사람만), 할 일 추가·담당자·마감일·상태(할 일 → 진행 중 → 완료)·삭제 |
 | 검색 | 상단 검색창 하나로 글, 프로젝트, 할 일을 함께 찾기 |
 
@@ -33,7 +33,7 @@ web/
     board/routes/          auth, posts, images, projects, search
     seed/board.db          샘플 데이터 (SQLite 파일 1개)
     seed.py                seed/board.db를 다시 만드는 스크립트
-    tests/                 pytest 16개 (S3는 moto 가짜 S3로 검사)
+    tests/                 pytest 18개 (S3는 moto 가짜 S3로 검사)
   frontend/                화면 소스 (React + Vite). npm run build → ../static
   static/                  빌드된 화면 (git에 포함). 로컬에서는 API가 이 폴더를 제공
 SkyBoard-sky.zip                Sky 업로드용 ZIP (Tools/package-skyboard.py로 생성)
@@ -52,6 +52,7 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 (`uv`가 없으면 `python -m venv .venv` → `.venv\Scripts\pip install -r requirements-dev.txt`)
 
 - **써 보기 (터미널 하나):** `.venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000` → `http://localhost:8000`
+  - 이미지 업로드까지 쓰려면 먼저 `IMAGE_UPLOADS=1`을 준다(PowerShell: `$env:IMAGE_UPLOADS="1"`)
   - 빌드된 `web/static` 화면이 같이 나온다. API 문서는 `http://localhost:8000/docs`
 - **화면을 고치면서 보기:** 위 API를 켠 채로 `cd web/frontend` → `npm ci` → `npm run dev` → `http://localhost:5173`
   - 개발 서버가 `/api`, `/uploads`를 8000번 API로 넘겨 준다. 다 고쳤으면 `npm run build`로 `web/static`을 갱신한다
@@ -61,8 +62,8 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 
 ## 테스트
 
-- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (16개)
-- 브라우저: 서버를 띄운 뒤 저장소 루트에서
+- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (18개)
+- 브라우저: **`IMAGE_UPLOADS=1`로** 서버를 띄운 뒤 저장소 루트에서 (이미지 글 단계가 있다)
   ```
   npm ci --prefix Tools
   node Tools/board-browser-check.cjs http://localhost:8000
@@ -85,16 +86,19 @@ ZIP을 Sky 최신 코드(`sky-platform` origin/main) 분석 함수와 Docker로 
 | --- | --- |
 | 실행 방식 (`analyze`) | 기존 Dockerfile 사용. Sky가 넘기는 `PORT`(3000)로 뜬다 |
 | SQLite → PostgreSQL 자동 이전 사전 검사 | 통과. `data/board.db` 7개 테이블, 행 8개 → `postgresql` (RDS) |
-| 로컬/온프레미스 SQLite 볼륨 조건 | DB 1개, 하위 폴더 `data/`, Dockerfile `WORKDIR /app` → 볼륨 `/app/data`. 이미지(`data/uploads`)도 같은 볼륨에 남는다 |
-| Docker 실제 실행 (빈 볼륨을 `/app/data`에, `PORT=3000`) | 화면·API·`/health` 정상, 내부 파일(`/main.py`, `/data/board.db`) 404, 브라우저 확인 7단계 통과, 컨테이너를 새로 만들어도 글·이미지 유지 |
+| 로컬/온프레미스 SQLite 볼륨 조건 | DB 1개, 하위 폴더 `data/`, Dockerfile `WORKDIR /app` → 볼륨 `/app/data`. `IMAGE_UPLOADS=1`을 주면 이미지(`data/uploads`)도 같은 볼륨에 남는다 |
+| Docker 실제 실행 (빈 볼륨을 `/app/data`에, `PORT=3000`) | 화면·API·`/health` 정상, 내부 파일(`/main.py`, `/data/board.db`) 404, 브라우저 확인 7단계 통과, 컨테이너를 새로 만들어도 글·이미지 유지 (업로드 기본 꺼짐 전, 켠 상태로 확인) |
 
 SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER 기본 키, NOT NULL만** 쓴다(외래 키·UNIQUE·인덱스·기본값·CHECK 없음, `migrations/` 폴더 없음, SQLite 파일 1개). 그 규칙들은 코드에서 지킨다. 자세한 이유는 `board/schema.sql` 맨 위 주석.
 
 ### 이미지 저장소
-- 온프레미스: 위 볼륨에 저장되므로 따로 할 일이 없다(MinIO를 쓰려면 `S3_BUCKET` + `S3_ENDPOINT_URL`).
-- AWS(ECS): 컨테이너 디스크는 재배포 때 지워진다. S3 버킷을 만들고(비공개 그대로) `S3_BUCKET=<버킷 이름>`을 준다. 작업 역할에 그 버킷의 `s3:ListBucket`과 `uploads/*`의 `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`가 필요하다. Sky에는 아직 앱 파일용 S3 연결 기능이 없다(`durable_files: False`).
+**기본은 꺼져 있다.** 꺼져 있으면 글쓰기 화면에 업로드 버튼이 없고 `POST /api/images`는 403이다. 글·프로젝트·할 일은 그대로 쓴다.
+이유: Sky는 이 앱의 업로드 폴더(`UPLOAD_DIR`, 설정값 경로)를 로컬 파일 쓰기로 감지하지 못한다. 그래서 켠 채로 AWS에 올리면 경고 없이 배포되고, 컨테이너 디스크가 재배포 때 지워져 이미지가 사라진다. 저장 위치가 확실할 때만 켠다.
+
+- 온프레미스: `IMAGE_UPLOADS=1`을 주면 위 볼륨에 저장된다(MinIO를 쓰려면 `S3_BUCKET` + `S3_ENDPOINT_URL`).
+- AWS(ECS): 컨테이너 디스크는 재배포 때 지워지므로 `IMAGE_UPLOADS=1`만 주면 안 된다. S3 버킷을 만들고(비공개 그대로) `S3_BUCKET=<버킷 이름>`을 주면 업로드가 켜진다. 작업 역할에 그 버킷의 `s3:ListBucket`과 `uploads/*`의 `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject`가 필요하다. Sky에는 아직 앱 파일용 S3 연결 기능이 없고 앱 컨테이너에 작업 역할도 주지 않으므로(`durable_files: False`), **Sky AWS 배포에서는 꺼 둔다.**
 - 이미지 주소는 어느 저장소든 `/uploads/<이름>`으로 같다(API가 읽어서 보낸다).
-- 저장소를 쓸 수 없으면 서버가 시작할 때 바로 멈추고 이유를 로그에 남긴다.
+- 업로드가 켜져 있는데 저장소를 쓸 수 없으면 서버가 시작할 때 바로 멈추고 이유를 로그에 남긴다.
 
 ### 화면만 따로 배포하고 싶을 때 (선택)
 `web/static`은 그대로 정적 사이트(S3 + CloudFront, Nginx)로 올릴 수 있다(Sky 정적 판정 `eligible`).
@@ -107,8 +111,9 @@ SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER �
 | `PORT` | `8000` (Dockerfile) | 서버 포트 |
 | `DATABASE_PATH` | `data/board.db` | SQLite 파일 위치 |
 | `SEED_DATABASE` | `seed/board.db` | DB가 없을 때 복사할 샘플. 빈 값이면 빈 DB로 시작 |
+| `IMAGE_UPLOADS` | (꺼짐) | `1`이면 이미지 업로드를 켠다. `S3_BUCKET`을 주면 자동으로 켜진다 |
 | `UPLOAD_DIR` | `data/uploads` | 이미지 폴더 (`S3_BUCKET`이 없을 때) |
-| `S3_BUCKET` | (없음) | 주면 이미지를 이 S3 버킷에 저장. 접속 정보는 AWS 표준 방식(작업 역할, `AWS_*` 변수) |
+| `S3_BUCKET` | (없음) | 주면 업로드를 켜고 이미지를 이 S3 버킷에 저장. 접속 정보는 AWS 표준 방식(작업 역할, `AWS_*` 변수) |
 | `S3_PREFIX` | `uploads/` | 버킷 안 경로 앞부분 |
 | `S3_ENDPOINT_URL` | (없음) | MinIO 같은 S3 호환 저장소 주소 |
 | `CORS_ORIGINS` | `*` | 화면을 따로 배포할 때 API를 부를 수 있는 주소. 로그인은 `Authorization` 헤더라 `*`도 안전하다 |
@@ -127,7 +132,8 @@ SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER �
 | GET | `/api/users` | 전체 멤버 (담당자 고르기용) |
 | GET | `/api/posts?q=&page=&pageSize=` | 글 목록 `{items, total, page, pageSize}` |
 | POST / GET / PATCH / DELETE | `/api/posts`, `/api/posts/{id}` | 글 쓰기·보기·고치기·지우기 (`imageIds`로 이미지 지정) |
-| POST | `/api/images` | 이미지 업로드(form 필드 `file`) → `{id, url}` |
+| GET | `/api/features` | 서버 기능 켜짐 여부 `{imageUploads}` (로그인 불필요) |
+| POST | `/api/images` | 이미지 업로드(form 필드 `file`) → `{id, url}`. 업로드가 꺼져 있으면 403 |
 | GET | `/uploads/{name}` | 이미지 파일 (로그인 불필요, 이름은 추측 불가한 무작위 값) |
 | GET / POST | `/api/projects` | 프로젝트 목록(할 일 개수 포함)·만들기 |
 | GET / PATCH / DELETE | `/api/projects/{id}` | 프로젝트(할 일 포함)·이름 변경·삭제 |
