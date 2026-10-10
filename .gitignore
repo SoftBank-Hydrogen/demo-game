@@ -8,6 +8,10 @@ Tools/node_modules/
 deploy/public/build/
 Artifacts/
 game/server/data/
+web/backend/data/
+web/backend/.venv/
+__pycache__/
+.pytest_cache/
 **/node_modules/
 .env
 .env.*
@@ -27,3 +31,4 @@ Unity/.vs/
 Thumbs.db
 *.csproj
 *.sln
+dist/

@@ -1,0 +1,54 @@
+"""Log in (a new name signs up automatically), log out, who am I, and the member list."""
+import sqlite3
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+
+from ..db import get_db, now
+from ..schemas import Login
+from ..security import bearer_token, current_user, end_session, hash_password, new_session, verify_password
+
+router = APIRouter(tags=["auth"])
+
+
+def user_json(row: sqlite3.Row) -> dict:
+    return {"id": row["id"], "username": row["username"], "displayName": row["display_name"]}
+
+
+@router.post("/api/auth/login")
+def login(body: Login, request: Request, db: sqlite3.Connection = Depends(get_db)):
+    """Existing name: the password must match. New name: the account is created with this password."""
+    # Names are unique ignoring case. The oldest row with a name owns it.
+    find = lambda: db.execute("SELECT * FROM users WHERE lower(username) = lower(?) ORDER BY id LIMIT 1",
+                              (body.username,)).fetchone()
+    user, created = find(), False
+    if user is None:
+        with db:
+            new_id = db.execute("INSERT INTO users (username, display_name, password_hash, created_at) "
+                                "VALUES (?, ?, ?, ?) RETURNING id",
+                                (body.username, body.username, hash_password(body.password), now())).fetchone()[0]
+        user = find()
+        created = user["id"] == new_id
+        if not created:   # someone took the same name a moment earlier: keep theirs
+            with db:
+                db.execute("DELETE FROM users WHERE id = ?", (new_id,))
+    if not created and not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(401, "Wrong password for this name")
+    token = new_session(db, user["id"], request.app.state.settings.session_days)
+    return {"token": token, "user": user_json(user), "created": created}
+
+
+@router.post("/api/auth/logout", status_code=204)
+def logout(request: Request, user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    end_session(db, bearer_token(request))
+
+
+@router.get("/api/auth/me")
+def me(user=Depends(current_user)):
+    return user_json(user)
+
+
+@router.get("/api/users")
+def users(user=Depends(current_user), db: sqlite3.Connection = Depends(get_db)):
+    """Everyone on the board, for choosing a task's assignee."""
+    rows = db.execute("SELECT * FROM users ORDER BY lower(display_name)").fetchall()
+    return [user_json(r) for r in rows]
