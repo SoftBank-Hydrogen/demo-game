@@ -36,6 +36,7 @@ web/
     tests/                 pytest 16개 (S3는 moto 가짜 S3로 검사)
   frontend/                화면 소스 (React + Vite). npm run build → ../static
   static/                  빌드된 화면 (git에 포함). 로컬에서는 API가 이 폴더를 제공
+SkyBoard-sky.zip                Sky 업로드용 ZIP (Tools/package-skyboard.py로 생성)
 Tools/package-skyboard.py       Sky 업로드용 ZIP 만들기
 Tools/board-browser-check.cjs   브라우저 자동 확인
 ```
@@ -70,13 +71,13 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 
 ## Sky 배포
 
-1. 업로드용 ZIP을 만든다(저장소 루트에서):
+1. 저장소 루트의 **`SkyBoard-sky.zip`**을 Sky에 올리고 Deploy → 나온 URL로 접속한다.
+   - 안에는 `main.py`, `board/`, `Dockerfile`, `requirements.txt`, `public/`(빌드된 화면), `data/board.db`(샘플 DB)가 들어 있다.
+   - **GitHub의 `web/backend` 폴더만 올리면 화면과 DB가 빠지므로 이 ZIP을 올린다.**
+2. 코드를 고쳤으면 ZIP을 다시 만들어 함께 커밋한다(저장소 루트에서):
    ```
-   web/backend/.venv/Scripts/python.exe Tools/package-skyboard.py dist/skyboard.zip
+   web/backend/.venv/Scripts/python.exe Tools/package-skyboard.py SkyBoard-sky.zip
    ```
-   화면을 빌드한 뒤 `main.py`, `board/`, `Dockerfile`, `requirements.txt`, `public/`(화면), `data/board.db`(샘플 DB)를 묶는다.
-   **GitHub의 `web/backend` 폴더만 올리면 화면과 DB가 빠지므로 이 ZIP을 올린다.**
-2. Sky에 ZIP을 올리고 Deploy → 나온 URL로 접속한다.
 
 ZIP을 Sky 최신 코드(`sky-platform` origin/main) 분석 함수와 Docker로 확인한 결과:
 
