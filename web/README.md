@@ -1,13 +1,14 @@
 # SkyBoard — 팀 게시판 / 프로젝트 관리 (Sky 메인 데모 Case B)
 
 이미지를 붙일 수 있는 팀 게시판과 프로젝트·할 일 관리 웹앱이다. **React + FastAPI + SQLite + 로컬 업로드.**
-FastAPI 서버 하나가 화면과 API를 함께 제공한다(같은 주소). Sky에는 **ZIP 하나를 올려 Deploy 한 번 → URL 하나**로 배포한다.
+화면(React)과 API(FastAPI)는 **서로 다른 구성 요소**다. Sky가 각각을 판단해 배치하는 장면(Full-stack)을 보여 주는 메인 데모다.
 
-| 부분 | 지금 (로컬) | Sky 배포 후: AWS | 온프레미스 |
-| --- | --- | --- | --- |
-| 앱 (화면 + API) | FastAPI 서버 하나 | ECS 컨테이너 | Docker 컨테이너 |
-| DB | `data/board.db` (SQLite) | RDS PostgreSQL (Sky가 자동 이전·코드 변환) | SQLite 그대로 + 볼륨 `/app/data` |
-| 이미지 | `data/uploads/` | S3 (`S3_BUCKET`) | 같은 볼륨 `/app/data/uploads` |
+| 구성 요소 | 지금 (로컬) | Sky 판단 | AWS | 온프레미스 |
+| --- | --- | --- | --- | --- |
+| 화면 `frontend/` → `static/` | React SPA (Vite 빌드) | Static | S3 + CloudFront | Nginx |
+| API `backend/` | FastAPI | Container | ECS | Docker |
+| DB | `data/board.db` (SQLite) | 영속 관계형 DB | RDS PostgreSQL | PostgreSQL 또는 볼륨 |
+| 이미지 | `data/uploads/` | Object storage | S3 (`S3_BUCKET`) | Volume (`UPLOAD_DIR`) |
 
 | 기능 | 내용 |
 | --- | --- |
@@ -21,8 +22,8 @@ FastAPI 서버 하나가 화면과 API를 함께 제공한다(같은 주소). Sk
 
 ```
 web/
-  backend/                 FastAPI (Python 3.13). 화면도 여기서 제공
-    main.py                app = FastAPI(...); /api/*, /uploads/*, /health, 그 외 경로는 화면
+  backend/                 FastAPI (Python 3.13). API만 제공(화면은 별도 구성 요소)
+    main.py                app = FastAPI(...); /api/*, /uploads/*, /health
     Dockerfile             배포용 이미지 (PORT 환경 변수로 실행)
     requirements.txt       fastapi, uvicorn, python-multipart, boto3
     board/schema.sql       테이블 (시작할 때 IF NOT EXISTS로 생성)
@@ -35,9 +36,10 @@ web/
     seed.py                seed/board.db를 다시 만드는 스크립트
     tests/                 pytest 16개 (S3는 moto 가짜 S3로 검사)
   frontend/                화면 소스 (React + Vite). npm run build → ../static
-  static/                  빌드된 화면 (git에 포함). 로컬에서는 API가 이 폴더를 제공
-SkyBoard-sky.zip                Sky 업로드용 ZIP (Tools/package-skyboard.py로 생성)
-Tools/package-skyboard.py       Sky 업로드용 ZIP 만들기
+  static/                  빌드된 화면 (git에 포함). config.json에 배포된 API 주소를 넣는다
+SkyBoard-fullstack.zip          Sky 업로드용 (메인): frontend/ + static/ + backend/
+SkyBoard-single-server.zip      예비용: API가 화면까지 함께 제공하는 컨테이너 하나
+Tools/package-skyboard.py       위 두 ZIP 만들기
 Tools/board-browser-check.cjs   브라우저 자동 확인
 ```
 
@@ -51,10 +53,10 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 ```
 (`uv`가 없으면 `python -m venv .venv` → `.venv\Scripts\pip install -r requirements-dev.txt`)
 
-- **써 보기 (터미널 하나):** `.venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000` → `http://localhost:8000`
-  - 빌드된 `web/static` 화면이 같이 나온다. API 문서는 `http://localhost:8000/docs`
-- **화면을 고치면서 보기:** 위 API를 켠 채로 `cd web/frontend` → `npm ci` → `npm run dev` → `http://localhost:5173`
-  - 개발 서버가 `/api`, `/uploads`를 8000번 API로 넘겨 준다. 다 고쳤으면 `npm run build`로 `web/static`을 갱신한다
+터미널 두 개(API, 화면)를 쓴다.
+1. **API:** `web/backend`에서 `.venv/Scripts/python.exe -m uvicorn main:app --reload --host 127.0.0.1 --port 8000` (API 문서: `http://localhost:8000/docs`)
+2. **화면:** `web/frontend`에서 `npm ci`(처음 한 번) → `npm run dev` → `http://localhost:5173`
+   - 개발 서버가 `/api`, `/uploads`를 8000번 API로 넘겨 준다. 빌드본을 보려면 `npm run build` → `npm run preview` → `http://localhost:4173`
 
 아무 이름과 비밀번호로 들어간다. 시크릿 창에서 다른 이름으로 들어가면 둘이 함께 쓰는 모습을 볼 수 있다.
 데이터는 `web/backend/data/`(`board.db`, `uploads/`)에 쌓인다(git 제외). 이 폴더를 지우고 다시 켜면 샘플 데이터로 시작한다.
@@ -65,28 +67,38 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt
 - 브라우저: 서버를 띄운 뒤 저장소 루트에서
   ```
   npm ci --prefix Tools
-  node Tools/board-browser-check.cjs http://localhost:8000
+  node Tools/board-browser-check.cjs http://localhost:5173
   ```
   데스크톱 1명 + 휴대폰 화면 1명이 실제 클릭·입력으로 들어가기 → 이미지 글 → 프로젝트·할 일 → 검색 → 수정 → 로그아웃·재로그인까지 확인한다. Google Chrome이 필요하다.
 
 ## Sky 배포
 
-1. 저장소 루트의 **`SkyBoard-sky.zip`**을 Sky에 올리고 Deploy → 나온 URL로 접속한다.
-   - 안에는 `main.py`, `board/`, `Dockerfile`, `requirements.txt`, `public/`(빌드된 화면), `data/board.db`(샘플 DB)가 들어 있다.
-   - **GitHub의 `web/backend` 폴더만 올리면 화면과 DB가 빠지므로 이 ZIP을 올린다.**
-2. 코드를 고쳤으면 ZIP을 다시 만들어 함께 커밋한다(저장소 루트에서):
-   ```
-   web/backend/.venv/Scripts/python.exe Tools/package-skyboard.py SkyBoard-sky.zip
-   ```
+### 메인: Full-stack (`SkyBoard-fullstack.zip`)
+```
+frontend/   React + Vite 소스         → 빌드 → S3 + CloudFront (온프렘: Nginx)
+static/     빌드된 화면 + config.json  → 위 단계의 결과물. Sky가 빌드 전이라면 이걸 그대로 올린다
+backend/    FastAPI + Dockerfile       → ECS (온프렘: Docker)
+backend/seed/board.db  SQLite 샘플 DB → RDS PostgreSQL로 이전
+```
+배포 순서: API를 먼저 배포 → 그 주소를 `static/config.json`의 `apiBaseUrl`에 넣음 → 화면 배포. API의 CORS 기본값은 `*`라 추가 설정은 없다.
 
-ZIP을 Sky 최신 코드(`sky-platform` origin/main) 분석 함수와 Docker로 확인한 결과:
+구성 요소별로 Sky 최신 코드(`sky-platform` main `71eb4b2`) 분석 함수에 넣어 본 결과:
 
-| 검사 | 결과 |
-| --- | --- |
-| 실행 방식 (`analyze`) | 기존 Dockerfile 사용. Sky가 넘기는 `PORT`(3000)로 뜬다 |
-| SQLite → PostgreSQL 자동 이전 사전 검사 | 통과. `data/board.db` 7개 테이블, 행 8개 → `postgresql` (RDS) |
-| 로컬/온프레미스 SQLite 볼륨 조건 | DB 1개, 하위 폴더 `data/`, Dockerfile `WORKDIR /app` → 볼륨 `/app/data`. 이미지(`data/uploads`)도 같은 볼륨에 남는다 |
-| Docker 실제 실행 (빈 볼륨을 `/app/data`에, `PORT=3000`) | 화면·API·`/health` 정상, 내부 파일(`/main.py`, `/data/board.db`) 404, 브라우저 확인 7단계 통과, 컨테이너를 새로 만들어도 글·이미지 유지 |
+| 경로 | Sky 판단 | 의미 |
+| --- | --- | --- |
+| `static/` | 정적 사이트 `eligible` | S3 + CloudFront로 바로 배포 가능 |
+| `frontend/` | `needs_build` | React 소스. Sky에 빌드 후 정적 배포하는 경로가 아직 없다 |
+| `backend/` | 컨테이너(Dockerfile), SQLite → RDS 사전 검사 통과(7개 테이블, 행 8개) | ECS + RDS |
+| ZIP 전체 | 오류: 루트에 `main.py` 필요 | Sky는 아직 업로드를 앱 하나로만 본다. 구성 요소 분류는 Sky 쪽 작업 |
+
+### 예비: 한 서버 (`SkyBoard-single-server.zip`)
+API 컨테이너 하나가 화면(`public/`)까지 같이 보낸다(같은 주소, `config.json` 수정 불필요). Sky가 구성 요소 분류를 하기 전에도 Deploy 한 번 → URL 하나로 시연할 수 있다. 샘플 DB는 `data/board.db`(볼륨 `/app/data`). Docker로 Sky와 같은 방식(빈 볼륨, `PORT=3000`)으로 띄워 확인했다: 브라우저 확인 7단계 통과, 컨테이너를 새로 만들어도 글·이미지 유지.
+
+코드를 고쳤으면 두 ZIP을 다시 만들어 함께 커밋한다(저장소 루트에서):
+```
+web/backend/.venv/Scripts/python.exe Tools/package-skyboard.py SkyBoard-fullstack.zip
+web/backend/.venv/Scripts/python.exe Tools/package-skyboard.py SkyBoard-single-server.zip --single-server
+```
 
 SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER 기본 키, NOT NULL만** 쓴다(외래 키·UNIQUE·인덱스·기본값·CHECK 없음, `migrations/` 폴더 없음, SQLite 파일 1개). 그 규칙들은 코드에서 지킨다. 자세한 이유는 `board/schema.sql` 맨 위 주석.
 
@@ -96,9 +108,6 @@ SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER �
 - 이미지 주소는 어느 저장소든 `/uploads/<이름>`으로 같다(API가 읽어서 보낸다).
 - 저장소를 쓸 수 없으면 서버가 시작할 때 바로 멈추고 이유를 로그에 남긴다.
 
-### 화면만 따로 배포하고 싶을 때 (선택)
-`web/static`은 그대로 정적 사이트(S3 + CloudFront, Nginx)로 올릴 수 있다(Sky 정적 판정 `eligible`).
-이때는 `web/static/config.json`의 `apiBaseUrl`에 API 주소를 넣는다. API의 `CORS_ORIGINS` 기본값이 `*`라 추가 설정은 없다.
 
 ## 설정 (환경 변수)
 

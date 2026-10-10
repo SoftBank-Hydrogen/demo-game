@@ -1,4 +1,4 @@
-"""SkyBoard API (FastAPI).
+"""SkyBoard API (FastAPI). The React frontend (../frontend, built to ../static) is a separate component.
 
 Local:   uvicorn main:app --reload --host 127.0.0.1 --port 8000
 Deploy:  python -m uvicorn main:app --host 0.0.0.0 --port $PORT
@@ -54,11 +54,9 @@ def health(db: sqlite3.Connection = Depends(get_db)):
     return {"status": "ok"}
 
 
-backend_dir = Path(__file__).resolve().parent
-static_dir = backend_dir / "public"
-if not (static_dir / "index.html").is_file():
-    static_dir = backend_dir.parent / "static"
-
+# Only the single-server package (Tools/package-skyboard.py --single-server) puts the built frontend in
+# public/. Otherwise this is an API-only component and the frontend is deployed on its own (static hosting).
+static_dir = Path(__file__).resolve().parent / "public"
 if (static_dir / "index.html").is_file():
     # API and upload routes take precedence over the frontend.
     app.mount("/", StaticFiles(directory=static_dir, html=True), name="frontend")
