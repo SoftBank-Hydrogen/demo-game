@@ -10,7 +10,10 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent
 class Settings:
     database_path: Path          # SQLite file
     seed_database: Path | None   # copied to database_path when that does not exist yet
-    upload_dir: Path             # folder for uploaded images
+    upload_dir: Path             # folder for uploaded images (when no S3 bucket is set)
+    s3_bucket: str               # store images in this S3 bucket instead ("" = local folder)
+    s3_prefix: str               # key prefix inside the bucket
+    s3_endpoint_url: str         # for S3-compatible storage (MinIO etc.); "" = AWS
     cors_origins: tuple[str, ...]  # web pages allowed to call this API ("*" = any)
     max_upload_bytes: int
     session_days: int
@@ -25,6 +28,9 @@ def load_settings() -> Settings:
         database_path=Path(os.environ.get("DATABASE_PATH", BACKEND_DIR / "data" / "board.db")),
         seed_database=Path(seed) if seed else None,
         upload_dir=Path(os.environ.get("UPLOAD_DIR", BACKEND_DIR / "data" / "uploads")),
+        s3_bucket=os.environ.get("S3_BUCKET", "").strip(),
+        s3_prefix=os.environ.get("S3_PREFIX", "uploads/"),
+        s3_endpoint_url=os.environ.get("S3_ENDPOINT_URL", "").strip(),
         cors_origins=tuple(o.strip().rstrip("/") for o in origins.split(",") if o.strip()),
         max_upload_bytes=int(os.environ.get("MAX_UPLOAD_MB", "5")) * 1024 * 1024,
         session_days=int(os.environ.get("SESSION_DAYS", "7")),

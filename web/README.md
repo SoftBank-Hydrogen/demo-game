@@ -8,7 +8,7 @@
 | 화면 `web/static` | 빌드된 정적 파일 | Static | S3 + CloudFront | Nginx |
 | API `web/backend` | FastAPI | Container | ECS | Docker |
 | DB | SQLite 파일 | 영속 관계형 DB | RDS (PostgreSQL) | PostgreSQL |
-| 이미지 | `data/uploads/` 폴더 | Object storage | S3 | Volume |
+| 이미지 | `data/uploads/` 폴더 | Object storage | S3 (`S3_BUCKET`) | Volume (`UPLOAD_DIR`) 또는 MinIO |
 
 | 기능 | 내용 |
 | --- | --- |
@@ -29,13 +29,13 @@ web/
     requirements.txt       fastapi, uvicorn, python-multipart
     board/schema.sql       테이블 (시작할 때 IF NOT EXISTS로 생성)
     board/db.py            SQLite 연결, 새 DB면 seed 복사
-    board/storage.py       이미지 파일 저장 (로컬 폴더; S3로 바꿀 때 이 파일만 수정)
+    board/storage.py       이미지 저장: 로컬 폴더(기본) 또는 S3 버킷(S3_BUCKET)
     board/security.py      비밀번호 해시, 로그인 토큰
     board/schemas.py       입력 검사 규칙
     board/routes/          auth, posts, images, projects, search
     seed/board.db          샘플 데이터 (SQLite 파일 1개)
     seed.py                seed/board.db를 다시 만드는 스크립트
-    tests/                 pytest 14개
+    tests/                 pytest 16개 (S3는 moto 가짜 S3로 검사)
   frontend/                화면 소스 (React + Vite). 고친 뒤 npm run build → static/ 갱신
 Tools/board-browser-check.cjs   브라우저 자동 확인
 ```
@@ -62,7 +62,7 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
 
 ## 테스트
 
-- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (14개)
+- API: `cd web/backend` → `.venv/Scripts/python.exe -m pytest -q` (16개)
 - 브라우저: API와 화면을 띄운 뒤 저장소 루트에서
   ```
   npm ci --prefix Tools
@@ -76,7 +76,10 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
 | --- | --- | --- |
 | `DATABASE_PATH` | `data/board.db` | SQLite 파일 위치 |
 | `SEED_DATABASE` | `seed/board.db` | DB가 없을 때 복사할 샘플. 빈 값이면 빈 DB로 시작 |
-| `UPLOAD_DIR` | `data/uploads` | 이미지 파일 폴더 |
+| `UPLOAD_DIR` | `data/uploads` | 이미지 파일 폴더 (`S3_BUCKET`이 없을 때) |
+| `S3_BUCKET` | (없음) | 주면 이미지를 이 S3 버킷에 저장. 접속 정보는 AWS 표준 방식(ECS 작업 역할, `AWS_*` 변수)으로 받는다 |
+| `S3_PREFIX` | `uploads/` | 버킷 안 경로 앞부분 |
+| `S3_ENDPOINT_URL` | (없음) | MinIO 같은 S3 호환 저장소 주소 |
 | `CORS_ORIGINS` | `*` | API를 부를 수 있는 화면 주소(쉼표로 여러 개). 로그인은 쿠키가 아니라 `Authorization` 헤더라 `*`도 안전하다 |
 | `MAX_UPLOAD_MB` | `5` | 이미지 한 장 최대 크기 |
 | `SESSION_DAYS` | `7` | 로그인 유지 기간 |
@@ -85,8 +88,14 @@ Tools/board-browser-check.cjs   브라우저 자동 확인
 
 ## 배포 (Sky)
 
-1. **API**: `web/backend`를 올린다 → 공개 주소를 얻는다(예: `https://xxxx.ecs.aws`).
-2. **화면**: `web/static/config.json`의 `apiBaseUrl`을 그 주소로 바꾼 뒤 `web/static`을 올린다.
+1. **이미지 저장소** (재배포해도 이미지가 남게)
+   - AWS: S3 버킷을 만들고(비공개 그대로) API 컨테이너에 `S3_BUCKET=<버킷 이름>`을 준다. ECS 작업 역할에 그 버킷의 `s3:ListBucket`(시작 시 확인용)과 `uploads/*`에 대한 `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` 권한이 필요하다.
+   - 온프레미스: 볼륨을 붙이고 `UPLOAD_DIR`을 그 안으로 지정한다(MinIO를 쓰면 `S3_BUCKET` + `S3_ENDPOINT_URL`).
+   - 저장소를 쓸 수 없으면 API가 시작할 때 바로 멈추고 이유를 로그에 남긴다(첫 업로드에서야 실패하지 않도록).
+2. **API**: `web/backend`를 올린다 → 공개 주소를 얻는다(예: `https://xxxx.ecs.aws`).
+3. **화면**: `web/static/config.json`의 `apiBaseUrl`을 그 주소로 바꾼 뒤 `web/static`을 올린다.
+
+이미지 주소는 어느 저장소든 `/uploads/<이름>`으로 같다. API가 저장소에서 읽어 보내 주므로 버킷을 공개할 필요가 없다.
 
 Sky 최신 코드(`sky-platform` origin/main)의 분석 함수로 직접 확인한 결과:
 
@@ -95,6 +104,7 @@ Sky 최신 코드(`sky-platform` origin/main)의 분석 함수로 직접 확인�
 | `web/static` 정적 사이트 판정 (`assess_static_site`) | `eligible` → S3 + CloudFront |
 | `web/backend` 실행 방식 (`analyze`) | `python-asgi`, `python -m uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | SQLite → PostgreSQL 자동 이전 사전 검사 (`preflight_sqlite_conversion`) | 통과. `seed/board.db` 7개 테이블, 행 8개 → `postgresql` |
+| 이미지 저장소 | Sky에는 아직 앱 파일용 S3 연결 기능이 없다(`durable_files: False`). 앱은 `S3_BUCKET`만 주면 S3를 쓰므로, Sky는 버킷·권한을 만들고 이 변수를 넣어 주면 된다 |
 
 SQLite 자동 이전 조건 때문에 테이블은 **INTEGER/TEXT 칸, INTEGER 기본 키, NOT NULL만** 쓴다(외래 키·UNIQUE·인덱스·기본값·CHECK 없음, `migrations/` 폴더 없음, SQLite 파일 1개). 그 규칙들은 코드에서 지킨다. 자세한 이유는 `board/schema.sql` 맨 위 주석.
 

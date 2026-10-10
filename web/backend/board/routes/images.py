@@ -2,7 +2,8 @@
 import sqlite3
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from .. import storage
 from ..db import get_db, now
@@ -26,7 +27,9 @@ async def upload(request: Request, file: UploadFile = File(...), user=Depends(cu
     if not kind:
         raise HTTPException(415, "Only PNG, JPEG, GIF and WebP images are accepted")
     content_type, ext = kind
-    name = storage.save(settings.upload_dir, data, ext)
+    name = storage.new_name(ext)
+    # Saving may be a network call (S3); keep it off the event loop.
+    await run_in_threadpool(request.app.state.storage.save, name, data)
     with db:
         row = db.execute(
             "INSERT INTO images (owner_id, filename, content_type, size, created_at) VALUES (?, ?, ?, ?, ?) RETURNING *",
@@ -37,10 +40,10 @@ async def upload(request: Request, file: UploadFile = File(...), user=Depends(cu
 @router.get("/uploads/{name}")
 def serve(name: str, request: Request):
     """Public so <img> tags work without a login header; names are random and unguessable."""
-    path = storage.path_of(request.app.state.settings.upload_dir, name)
-    if not path:
+    chunks = request.app.state.storage.read(name)
+    if chunks is None:
         raise HTTPException(404, "Not found")
-    return FileResponse(path, media_type=storage.CONTENT_TYPES[path.suffix[1:]], headers={
+    return StreamingResponse(chunks, media_type=storage.content_type(name), headers={
         "Cache-Control": "public, max-age=31536000, immutable",   # a name never gets new content
         "X-Content-Type-Options": "nosniff",
     })

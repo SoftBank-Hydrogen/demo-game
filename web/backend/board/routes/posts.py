@@ -121,4 +121,4 @@ def _set_images(db: sqlite3.Connection, post_id: int, user_id: int, image_ids: l
 
 def _delete_files(request: Request, names: list[str]) -> None:
     for name in names:
-        storage.delete(request.app.state.settings.upload_dir, name)
+        request.app.state.storage.delete(name)
