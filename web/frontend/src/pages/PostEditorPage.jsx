@@ -15,6 +15,11 @@ export default function PostEditorPage() {
   const [uploading, setUploading] = useState(0);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [uploadsOn, setUploadsOn] = useState(false);
+
+  useEffect(() => {
+    api('/api/features').then(f => setUploadsOn(Boolean(f?.imageUploads))).catch(() => setUploadsOn(false));
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -73,13 +78,14 @@ export default function PostEditorPage() {
             </figure>
           ))}
         </div>
-        {images.length < MAX_IMAGES && (
+        {uploadsOn && images.length < MAX_IMAGES && (
           <label className="file-pick">
             <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple onChange={pick} />
             {uploading ? 'Uploading…' : 'Add images'}
           </label>
         )}
-        <p className="hint">PNG, JPEG, GIF or WebP, up to 5 MB each.</p>
+        <p className="hint">{uploadsOn ? 'PNG, JPEG, GIF or WebP, up to 5 MB each.'
+                                       : 'Image uploads are turned off on this server.'}</p>
       </div>
 
       {error && <p className="error" role="alert">{error}</p>}

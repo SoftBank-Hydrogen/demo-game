@@ -22,12 +22,15 @@ from board.storage import make_storage
 async def lifespan(app: FastAPI):
     settings = app.state.settings = load_settings()
     storage = app.state.storage = make_storage(settings)
-    try:
-        storage.check()   # fail at startup, not on the first upload
-    except Exception as error:
-        where = f"S3 bucket {settings.s3_bucket!r}" if settings.s3_bucket else f"folder {settings.upload_dir}"
-        raise RuntimeError(f"Image storage is not usable ({where}): {error}") from error
-    print("Images are stored in", f"S3 bucket {settings.s3_bucket}" if settings.s3_bucket else settings.upload_dir)
+    if settings.image_uploads:
+        try:
+            storage.check()   # fail at startup, not on the first upload
+        except Exception as error:
+            where = f"S3 bucket {settings.s3_bucket!r}" if settings.s3_bucket else f"folder {settings.upload_dir}"
+            raise RuntimeError(f"Image storage is not usable ({where}): {error}") from error
+        print("Images are stored in", f"S3 bucket {settings.s3_bucket}" if settings.s3_bucket else settings.upload_dir)
+    else:
+        print("Image uploads are off (set IMAGE_UPLOADS=1 with a persistent folder, or S3_BUCKET)")
     if init_db(settings.database_path, settings.seed_database):
         print("New database started from the sample data in", settings.seed_database)
     yield
@@ -52,6 +55,12 @@ for module in (auth, images, posts, projects, search):
 def health(db: sqlite3.Connection = Depends(get_db)):
     db.execute("SELECT 1").fetchone()
     return {"status": "ok"}
+
+
+@app.get("/api/features")
+def features():
+    """What this server allows, so the page can hide what is turned off. No login needed."""
+    return {"imageUploads": app.state.settings.image_uploads}
 
 
 backend_dir = Path(__file__).resolve().parent

@@ -63,6 +63,27 @@ def test_upload_rules(client):
     assert client.get("/uploads/notours.png").status_code == 404
 
 
+def test_uploads_are_off_by_default(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "board.db"))
+    monkeypatch.setenv("UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setenv("SEED_DATABASE", "")
+    monkeypatch.delenv("IMAGE_UPLOADS", raising=False)
+    monkeypatch.delenv("S3_BUCKET", raising=False)
+    from main import app
+    with TestClient(app) as client:
+        assert client.get("/api/features").json() == {"imageUploads": False}
+        headers, _ = signup(client, "alice")
+        assert upload(client, headers).status_code == 403
+        assert not (tmp_path / "uploads").exists() or not any((tmp_path / "uploads").iterdir())
+        # Posts without images still work.
+        assert client.post("/api/posts", headers=headers, json={"title": "t", "body": "b"}).status_code == 201
+
+
+def test_features_report_uploads_when_on(client):
+    assert client.get("/api/features").json() == {"imageUploads": True}
+
+
 def test_list_paging_and_search(client):
     headers, _ = signup(client, "alice")
     for i in range(25):
