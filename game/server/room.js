@@ -1,12 +1,12 @@
 'use strict';
-// One shared room: two teams tap as fast as they can for 30 seconds.
+// One shared room: two teams tap as fast as they can for 10 seconds.
 // Pure game logic. No networking here, so it can be tested with a fake clock.
 
 const TEAMS = ['A', 'B'];
 
 const DEFAULTS = {
   countdownMs: 3000,
-  roundMs: 30000,
+  roundMs: 10000,
   resultMs: 5000,
   minPlayers: 2,
   tapsPerSecondLimit: 15,   // per player
