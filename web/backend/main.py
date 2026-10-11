@@ -63,10 +63,8 @@ def features():
     return {"imageUploads": app.state.settings.image_uploads}
 
 
-backend_dir = Path(__file__).resolve().parent
-static_dir = backend_dir / "public"
-if not (static_dir / "index.html").is_file():
-    static_dir = backend_dir.parent / "static"
+# The single-server ZIP includes public/. The split package serves only the API.
+static_dir = Path(__file__).resolve().parent / "public"
 
 if (static_dir / "index.html").is_file():
     # API and upload routes take precedence over the frontend.
